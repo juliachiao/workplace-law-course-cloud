@@ -303,7 +303,10 @@ const App = (function () {
     document.getElementById('page-app').classList.remove('hidden');
     const user = Data.getCurrentUser();
     document.getElementById('user-name').textContent = `${user.name} (${user.role === 'manager' ? '主管' : '新進'})`;
-    renderRoute('menu');
+    // 重新整理時留在原本的頁面；網址沒有頁面資訊就回課程選單
+    const r = routeFromHash();
+    if (r) { routeFromHistory = true; try { renderRoute(...r); } finally { routeFromHistory = false; } }
+    else renderRoute('menu');
     checkDeadlineReminder();
     checkAnnouncements();
   }
@@ -416,11 +419,47 @@ const App = (function () {
     game:         renderGame
   };
 
+  // 切換頁面：
+  //  ・換頁後一律回到頁面最上方（避免停在下方，看起來像沒有反應）
+  //  ・先離開全螢幕播放，按鈕才點得到
+  //  ・萬一頁面產生錯誤，自動重新整理回到課程選單，不會卡住
+  //  ・記錄在網址（#/menu 等），瀏覽器的「上一頁」也能正常使用
+  let routeFromHistory = false;
   function renderRoute(route, ...args) {
-    flushStudyTimer();
+    try { flushStudyTimer(); } catch (e) {}
     const fn = routes[route];
-    if (fn) fn(...args);
+    if (!fn) return;
+    try {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fsEl) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } catch (e) {}
+    try {
+      fn(...args);
+    } catch (e) {
+      console.error('頁面載入失敗', route, e);
+      try { sessionStorage.setItem('tp_route_error', route); } catch (_) {}
+      toast('頁面載入發生問題，正在重新整理…', 'error');
+      setTimeout(() => { location.hash = '#/menu'; location.reload(); }, 800);
+      return;
+    }
+    window.scrollTo(0, 0);
+    const hash = '#/' + [route, ...args].map(a => encodeURIComponent(a)).join('/');
+    if (!routeFromHistory && location.hash !== hash) {
+      try { history.pushState({ route, args }, '', hash); } catch (e) {}
+    }
   }
+  function routeFromHash() {
+    const h = (location.hash || '').replace(/^#\/?/, '');
+    if (!h) return null;
+    const parts = h.split('/').map(x => decodeURIComponent(x));
+    return routes[parts[0]] ? parts : null;
+  }
+  window.addEventListener('popstate', () => {
+    if (!Data.getCurrentUser() || document.getElementById('page-app').classList.contains('hidden')) return;
+    const r = routeFromHash() || ['menu'];
+    routeFromHistory = true;
+    try { renderRoute(...r); } finally { routeFromHistory = false; }
+  });
 
   function bindNav() {
     document.querySelectorAll('[data-route]').forEach(a => {
@@ -431,6 +470,7 @@ const App = (function () {
   function logout() {
     flushStudyTimer();
     try { Data.logoutUser(); } catch(e) {}
+    try { history.replaceState(null, '', location.pathname + location.search); } catch(e) {}   // 清掉網址上的頁面紀錄
     // 關閉彈窗
     const annOverlay = document.getElementById('ann-overlay');
     if (annOverlay) annOverlay.remove();
