@@ -416,7 +416,9 @@ const App = (function () {
     wronganswers: renderWrongAnswers,
     course:       renderCourse,
     final_exam:   renderFinalExam,
-    game:         renderGame
+    game:         renderGame,
+    summary:      renderSummary,
+    summary_unit: renderSummaryUnit
   };
 
   // 切換頁面：
@@ -442,7 +444,8 @@ const App = (function () {
       setTimeout(() => { location.hash = '#/menu'; location.reload(); }, 800);
       return;
     }
-    window.scrollTo(0, 0);
+    // 這個網站是由 body 負責捲動，所以 body 和 html 都要一起捲回最上方
+    window.scrollTo(0, 0); document.body.scrollTop = 0; document.documentElement.scrollTop = 0;
     const hash = '#/' + [route, ...args].map(a => encodeURIComponent(a)).join('/');
     if (!routeFromHistory && location.hash !== hash) {
       try { history.pushState({ route, args }, '', hash); } catch (e) {}
@@ -650,6 +653,506 @@ const App = (function () {
     }
   }
 
+  // =====================================================================
+
+  // ===== 重點整理（視覺化複習）=====
+
+  // 內容依據各單元課程說明、測驗題目與解析整理；修改內容只要改這個物件
+
+  // =====================================================================
+
+  const SUMMARY = {
+
+    pdpa: {
+
+      tagline: '該收的才收、該鎖的要鎖、該碎的要碎',
+
+      concepts: [
+
+        { icon: '🪪', title: '一般個資', desc: '姓名、電話、Email、地址，以及車牌、GPS 位置等能直接或拼湊出身分的資料' },
+
+        { icon: '🔐', title: '特種個資', desc: '病歷、醫療、基因、性生活、健康檢查、犯罪前科，受最高等級保護' },
+
+        { icon: '🎯', title: '特定目的', desc: '個資只能用在當初蒐集的目的，拿去做別的用途就是「逾越特定目的」' },
+
+        { icon: '⚖️', title: '法律紅線', desc: '個資外洩的民事賠償，同一事件合計最高可達 2 億元' },
+
+      ],
+
+      flowTitle: '個資管理四階段',
+
+      flow: [
+
+        { icon: '📥', label: '蒐集', desc: '合法蒐集，告知當事人用途、保存期限與接觸者' },
+
+        { icon: '🗂️', label: '處理', desc: '妥善保管，傳輸要加密' },
+
+        { icon: '📤', label: '利用', desc: '只在原本的特定目的內使用' },
+
+        { icon: '✂️', label: '銷毀', desc: '用碎紙機切成顆粒狀' },
+
+      ],
+
+      dos: ['離開座位時，個資文件鎖進抽屜或隨身帶走（桌面清空原則）', '寄送加密檔案，密碼改用電話或訊息另外告知（管道分離）', '密碼使用 12 位以上的強密碼', '發現個資異常，立即通報主管與個資窗口'],
+
+      donts: ['文件只是蓋起來、翻面就離開座位', '密碼和加密檔案寫在同一封信裡', '把客戶辦卡留的電話，拿去推銷其他商品', '因為害怕被罵，隱瞞個資外洩事件'],
+
+      sop: { title: '個資異常 SOP：疑、查、報', steps: ['疑：發現可疑的異常狀況', '查：立即查證是否真的外洩', '報：回報主管與個資窗口，不要隱瞞'] },
+
+      laws: [
+
+        { title: '《個人資料保護法》第 12 條', desc: '個資被竊取、洩漏或竄改時，要查明後以適當方式通知當事人' },
+
+        { title: '損害賠償上限', desc: '同一原因事實造成多數人受害，賠償合計最高 2 億元' },
+
+      ],
+
+      traps: ['碎成「長條狀」還是可能被拼湊還原，要碎成顆粒狀', '車牌、GPS 位置看似不重要，也屬於個資', '不必等到正式申訴，知悉疑似事件就要啟動處理'],
+
+    },
+
+    osh: {
+
+      tagline: '看見危險、避開危險、通報危險',
+
+      concepts: [
+
+        { icon: '🪜', title: '跌倒風險', desc: '站在椅子上拿高處物品，是辦公室最典型的職安風險' },
+
+        { icon: '💧', title: '滑倒風險', desc: '茶水間、走道地板濕滑，要立刻提醒並處理' },
+
+        { icon: '💺', title: '職業健康', desc: '長時間姿勢不良造成肩頸痠痛，也屬於職業安全衛生的範圍' },
+
+        { icon: '🧯', title: '火災應變', desc: '火勢過大時以自身安全為優先，先撤離再通報' },
+
+      ],
+
+      flowTitle: '職安三步驟：看、避、報',
+
+      flow: [
+
+        { icon: '👀', label: '看', desc: '留意身邊的危險源' },
+
+        { icon: '🚶', label: '避', desc: '避免危險行為，改用安全的替代方式' },
+
+        { icon: '📢', label: '報', desc: '立即通報相關人員，避免危害擴大' },
+
+      ],
+
+      dos: ['拿高處物品使用安全梯凳，或請同事協助', '發現地板濕滑，立即提醒周圍同事並通報', '依作業性質全程配戴耳罩、口罩等防護具', '正確使用公司提供的設備，遵守工作守則'],
+
+      donts: ['踩椅子、紙箱，或跳起來拿東西', '認為「沒有受傷就不算違規」', '覺得自己很資深，或沒人稽核就不戴防護具', '火勢已經很大，還硬要自己撲滅'],
+
+      laws: [
+
+        { title: '《職業安全衛生法》勞工義務', desc: '勞工應正確使用雇主提供的設備與防護措施，並遵守安全衛生工作守則' },
+
+      ],
+
+      traps: ['職安違規看的是「行為」，不是「有沒有受傷」', '長期姿勢不良的肌肉骨骼問題，也是職業健康議題'],
+
+    },
+
+    ai_policy: {
+
+      tagline: 'AI 是助手，不是替身：輸入前去識別、產出後要查證',
+
+      concepts: [
+
+        { icon: '🔓', title: '資料外洩', desc: '客戶個資、公司機密輸入外部 AI，可能被保存或外洩' },
+
+        { icon: '🌀', title: 'AI 幻覺', desc: 'AI 會產生看似正確、實際錯誤的內容' },
+
+        { icon: '©️', title: '著作權風險', desc: 'AI 生成內容可能涉及他人著作，註明「AI 生成」也不能免責' },
+
+        { icon: '✅', title: '核准工具清單', desc: '只使用公司核准的 AI 工具，確保資料安全與資安規範' },
+
+      ],
+
+      flowTitle: '安全使用 AI 的流程',
+
+      flow: [
+
+        { icon: '🧹', label: '去識別化', desc: '刪除姓名、電話等可識別個人的資料' },
+
+        { icon: '🛠️', label: '用核准工具', desc: '只在公司清單內的工具上操作' },
+
+        { icon: '🔍', label: '人工查證', desc: '確認 AI 產出的內容是否正確' },
+
+        { icon: '🏷️', label: '標註後使用', desc: '對外使用時依規範標註 AI 協助' },
+
+      ],
+
+      dos: ['分析客戶資料前，先刪除姓名、電話等可識別欄位', '使用公司核准清單內的 AI 工具', 'AI 產出的內容經過人工查證才使用', '對外文件依規範標註 AI 協助情形'],
+
+      donts: ['把含姓名、電話、交易紀錄的完整客戶資料直接貼給 AI', '把未公開的商業策略、合約、技術文件輸入公開 AI', '完全相信 AI 的答案，不做查證', '以為註明「AI 生成」就沒有著作權問題'],
+
+      laws: [
+
+        { title: '個資與機密保護', desc: '輸入 AI 的資料同樣受個資法與公司保密規範約束' },
+
+        { title: '智慧財產權', desc: 'AI 生成內容仍可能侵害他人著作權，使用前要確認來源與授權' },
+
+      ],
+
+      traps: ['「只要能提升效率」不是把個資輸入 AI 的理由', 'AI 不能完全取代人工判斷，最後的責任在使用的人'],
+
+    },
+
+    infosec: {
+
+      tagline: '資安不只是 IT 的事，每個「多確認一步」的人都是防線',
+
+      concepts: [
+
+        { icon: '🙈', title: '機密性 C', desc: '資料不能被未經授權的人看到' },
+
+        { icon: '🧩', title: '完整性 I', desc: '資料不能被竄改，例如帳號、金額被非法修改' },
+
+        { icon: '⚡', title: '可用性 A', desc: '需要使用時，系統和資料能正常取得' },
+
+        { icon: '🎣', title: '社交工程', desc: '駭客利用的是人性弱點，例如急迫感與貪婪，而不只是技術' },
+
+      ],
+
+      flowTitle: '資安事件三步驟：疑、查、報',
+
+      flow: [
+
+        { icon: '🤔', label: '疑', desc: '對可疑的信件、訊息保持警覺' },
+
+        { icon: '🔎', label: '查', desc: '確認來源是否合法，或直接詢問 IT，不要自己上網亂搜' },
+
+        { icon: '📮', label: '報', desc: '用公司內部的資安通報機制回報' },
+
+      ],
+
+      dos: ['先看寄件者：公司信應該是官方信箱，不是一般 Gmail', '收到「急件」「獎金」類訊息，先停一下再確認', '可疑郵件透過公司資安通報機制回報', '使用強密碼，不用 123456 或生日'],
+
+      donts: ['因為「不點就拿不到錢」就急著點連結', '插上來路不明的隨身碟', '相信假冒同事、主管傳來的訊息', '自己公開或回覆可疑的信件'],
+
+      threats: ['釣魚信件', '弱密碼（123456、生日）', '不明隨身碟', '假冒同事傳訊'],
+
+      laws: [
+
+        { title: '刑法：妨害電腦使用罪', desc: '病毒進入系統造成設備故障或資料損毀，可能涉及刑事責任' },
+
+        { title: '《個人資料保護法》', desc: '點了釣魚信導致客戶資料外洩，公司可能被主管機關開罰並負民事賠償' },
+
+      ],
+
+      traps: ['寄件者顯示名稱可以造假，要看實際的 email 網域', '資料外洩讓不該看的人看到，破壞的是「機密性」'],
+
+    },
+
+    bullying: {
+
+      tagline: '主管一「知悉」就要行動，守住「通、調、密、記」',
+
+      concepts: [
+
+        { icon: '💢', title: '霸凌的認定', desc: '依課程內容，造成身心危害的嚴重人格侮辱，即使只有一次也可能成立' },
+
+        { icon: '👂', title: '知悉即釐清', desc: '不必等書面申訴，主管只要知悉就有主動釐清的義務' },
+
+        { icon: '🛡️', title: '保護被害人', desc: '調查期間主管可以暫停被申訴人的職務，保護被害人' },
+
+        { icon: '🚫', title: '禁止報復', desc: '對申訴人或協助調查者的不利處分（例如調職）一律無效' },
+
+      ],
+
+      flowTitle: '主管處理原則：通、調、密、記',
+
+      flow: [
+
+        { icon: '📢', label: '通', desc: '知悉後依程序通報' },
+
+        { icon: '🔍', label: '調', desc: '啟動調查，釐清事實' },
+
+        { icon: '🤐', label: '密', desc: '全程保密，避免二次傷害' },
+
+        { icon: '📝', label: '記', desc: '每次警告、評估都留下書面紀錄' },
+
+      ],
+
+      dos: ['聽到傳聞就主動釐清，不等正式申訴', '調查期間採取保護被害人的措施', '每一次處理都留下完整的書面紀錄', '把霸凌定義和處理流程寫進工作規則並公告，定期辦理主管教育訓練'],
+
+      donts: ['找雙方「搓湯圓」，要求和解了事', '以「經營需要」為由，把申訴人調到偏遠單位', '讓被害人請無薪假來「隔離」', '認為員工離職，申訴就不了了之'],
+
+      laws: [
+
+        { title: '申訴時效', desc: '依課程內容，霸凌行為終了起 3 年內可申訴；在職期間發生者，離職後 1 年內仍可提出' },
+
+        { title: '《勞動事件法》舉證責任', desc: '雇主拿不出管理紀錄，法院可能直接認定勞工的主張為真實' },
+
+        { title: '強制和解的後果', desc: '強迫和解或程序有瑕疵，調查可能被認定無效並命令重查' },
+
+      ],
+
+      traps: ['「才罵一次」不代表不算霸凌', '平時沒有留紀錄，打官司時對公司非常不利'],
+
+    },
+
+    harassment: {
+
+      tagline: '知悉即啟動、保護當事人、程序要公正',
+
+      concepts: [
+
+        { icon: '👔', title: '權勢性騷擾', desc: '利用職務上指揮、監督的權力或機會進行騷擾，法院可判 1～3 倍懲罰性賠償金' },
+
+        { icon: '🌙', title: '非工作時間', desc: '同一單位或業務往來對象的持續性騷擾，即使在非工作時間也適用' },
+
+        { icon: '⚡', title: '知悉即啟動', desc: '不論有沒有正式申訴書，雇主知悉就要啟動處置並留下紀錄' },
+
+        { icon: '🧑‍⚖️', title: '外部專業人士', desc: '申訴調查小組要納入具性別意識的外部專業人士，確保公正' },
+
+      ],
+
+      flowTitle: '性騷擾事件處理流程',
+
+      flow: [
+
+        { icon: '👂', label: '知悉', desc: '一知道就要開始處理' },
+
+        { icon: '🛡️', label: '立即保護', desc: '隔離措施針對行為人' },
+
+        { icon: '📝', label: '受理申訴', desc: '依公司防治規定受理' },
+
+        { icon: '🔍', label: '公正調查', desc: '小組納入外部專業人士' },
+
+        { icon: '⚖️', label: '懲處追蹤', desc: '落實懲處並持續關心' },
+
+      ],
+
+      dos: ['調整行為人的座位、業務，或暫停其職務來隔離雙方', '提供申訴人心理諮商等協助', '即使行為人否認，也要完成調查程序', '情節重大要解僱時，在知悉起 30 日內行使'],
+
+      donts: ['等受害者遞交正式申訴書才處理', '以「發生在下班時間」為由拒絕受理', '把申訴人調職或減薪', '行為人一否認就停止調查'],
+
+      laws: [
+
+        { title: '雇主未立即處理', desc: '知悉性騷擾卻未採取立即有效的糾正及補救措施，最高可罰 100 萬元' },
+
+        { title: '連帶賠償責任', desc: '雇主無法證明已盡防治責任，要與行為人連帶負擔民事賠償' },
+
+        { title: '《勞動基準法》解僱時效', desc: '不經預告解僱，須自知悉之日起 30 日內行使' },
+
+      ],
+
+      traps: ['隔離措施要針對「行為人」，不是處罰申訴人', '權勢性騷擾和一般性騷擾的法律效果不同'],
+
+    },
+
+  };
+
+
+
+  // ===== 重點整理：列表頁 =====
+
+  function renderSummary() {
+
+    const user = Data.getCurrentUser();
+
+    const main = document.getElementById('main-content');
+
+    const myCourses = Data.COURSES[user.role] || [];
+
+    main.innerHTML = `
+
+      <div class="sum-wrap">
+
+        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
+
+        <div class="page-header" style="text-align:center; margin: 10px 0 26px;">
+
+          <h1 class="page-title" style="font-size:32px; letter-spacing:6px;">重點整理</h1>
+
+          <div style="width:44px; height:3px; background:var(--primary); margin:14px auto;"></div>
+
+          <p style="color:var(--text-light);">一頁看懂每個單元的重點，複習、考前快速瀏覽都方便</p>
+
+        </div>
+
+        <div class="sum-list">
+
+          ${myCourses.map((c, i) => {
+
+            const col = BRANCH_COLORS[i % BRANCH_COLORS.length], sm = SUMMARY[c.id];
+
+            if (!sm) return '';
+
+            return `
+
+              <div class="sum-list-card" data-cid="${c.id}" style="--bc:${col.c}; --bbg:${col.bg}">
+
+                <div class="sum-list-icon">${c.icon}</div>
+
+                <div class="sum-list-body">
+
+                  <div class="sum-list-unit">Unit ${String(i + 1).padStart(2, '0')}</div>
+
+                  <div class="sum-list-title">${c.title}</div>
+
+                  <div class="sum-list-tag">${sm.tagline}</div>
+
+                  <div class="sum-list-chips">${sm.concepts.map(k => `<span>${k.icon} ${k.title}</span>`).join('')}</div>
+
+                </div>
+
+                <div class="sum-list-arrow">→</div>
+
+              </div>`;
+
+          }).join('')}
+
+        </div>
+
+      </div>`;
+
+    main.querySelectorAll('.sum-list-card').forEach(el => el.addEventListener('click', () => renderRoute('summary_unit', el.dataset.cid)));
+
+  }
+
+
+
+  // ===== 重點整理：單元頁 =====
+
+  function renderSummaryUnit(courseId) {
+
+    const user = Data.getCurrentUser();
+
+    const main = document.getElementById('main-content');
+
+    const myCourses = Data.COURSES[user.role] || [];
+
+    const idx = myCourses.findIndex(c => c.id === courseId);
+
+    const course = myCourses[idx], sm = SUMMARY[courseId];
+
+    if (!course || !sm) return renderSummary();   // 只看得到自己學習路徑的單元
+
+    const col = BRANCH_COLORS[idx % BRANCH_COLORS.length];
+
+    try { Data.addLog(user.empId, 'summary_view', `查看重點整理：${course.title}`); } catch (e) {}
+
+    const prev = myCourses[idx - 1], next = myCourses[idx + 1];
+
+    main.innerHTML = `
+
+      <div class="sum-wrap sum-unit" style="--bc:${col.c}; --bbg:${col.bg}">
+
+        <div class="sum-top no-print">
+
+          <a class="btn-back-menu" onclick="App.go('summary')">← 回重點整理</a>
+
+          <button class="btn btn-secondary sum-print" id="sum-print">🖨️ 列印／存成 PDF</button>
+
+        </div>
+
+
+
+        <div class="sum-hero">
+
+          <div class="sum-hero-icon">${course.icon}</div>
+
+          <div>
+
+            <div class="sum-hero-unit">Unit ${String(idx + 1).padStart(2, '0')}・重點整理</div>
+
+            <h1 class="sum-hero-title">${course.title}</h1>
+
+            <div class="sum-hero-tag">💡 ${sm.tagline}</div>
+
+          </div>
+
+        </div>
+
+
+
+        <h2 class="sum-h">📌 核心概念</h2>
+
+        <div class="sum-concepts">
+
+          ${sm.concepts.map(k => `<div class="sum-concept"><div class="sum-concept-icon">${k.icon}</div><div class="sum-concept-title">${k.title}</div><div class="sum-concept-desc">${k.desc}</div></div>`).join('')}
+
+        </div>
+
+
+
+        <h2 class="sum-h">🔄 ${sm.flowTitle}</h2>
+
+        <div class="sum-flow">
+
+          ${sm.flow.map((f, i) => `
+
+            <div class="sum-step"><div class="sum-step-no">${i + 1}</div><div class="sum-step-icon">${f.icon}</div><div class="sum-step-label">${f.label}</div><div class="sum-step-desc">${f.desc}</div></div>
+
+            ${i < sm.flow.length - 1 ? '<div class="sum-arrow">➜</div>' : ''}`).join('')}
+
+        </div>
+
+
+
+        <h2 class="sum-h">⚖️ 正確做法 vs 錯誤做法</h2>
+
+        <div class="sum-dd">
+
+          <div class="sum-do"><div class="sum-dd-head">✅ 這樣做</div>${sm.dos.map(t => `<div class="sum-dd-item">✓ ${t}</div>`).join('')}</div>
+
+          <div class="sum-dont"><div class="sum-dd-head">❌ 不要這樣做</div>${sm.donts.map(t => `<div class="sum-dd-item">✕ ${t}</div>`).join('')}</div>
+
+        </div>
+
+
+
+        ${sm.sop ? `<h2 class="sum-h">🧭 ${sm.sop.title}</h2><div class="sum-sop">${sm.sop.steps.map(t => `<div>${t}</div>`).join('')}</div>` : ''}
+
+        ${sm.threats ? `<h2 class="sum-h">⚠️ 常見資安威脅</h2><div class="sum-chips">${sm.threats.map(t => `<span>${t}</span>`).join('')}</div>` : ''}
+
+
+
+        <h2 class="sum-h">📜 相關法規與責任</h2>
+
+        <div class="sum-laws">
+
+          ${sm.laws.map(l => `<div class="sum-law"><div class="sum-law-title">${l.title}</div><div class="sum-law-desc">${l.desc}</div></div>`).join('')}
+
+        </div>
+
+
+
+        <div class="sum-traps">
+
+          <div class="sum-traps-head">🚨 容易搞錯的地方</div>
+
+          ${sm.traps.map(t => `<div class="sum-trap">• ${t}</div>`).join('')}
+
+        </div>
+
+
+
+        <div class="sum-actions no-print">
+
+          ${prev ? `<button class="btn btn-secondary" data-go="${prev.id}">← ${prev.title}</button>` : '<span></span>'}
+
+          <button class="btn btn-primary" id="sum-course">🎬 前往本單元課程</button>
+
+          ${next ? `<button class="btn btn-secondary" data-go="${next.id}">${next.title} →</button>` : '<span></span>'}
+
+        </div>
+
+      </div>`;
+
+    document.getElementById('sum-print').onclick = () => window.print();
+
+    document.getElementById('sum-course').onclick = () => renderRoute('cover', courseId, user.role);
+
+    main.querySelectorAll('[data-go]').forEach(b => b.onclick = () => renderRoute('summary_unit', b.dataset.go));
+
+  }
+
+
+
   // ===== 3D 闖關遊戲頁 =====
   const GAME_URLS = {
     new_employee: 'https://juliachiao.github.io/3d-space/employee.html',
@@ -852,6 +1355,7 @@ const App = (function () {
           </div>
           ${statusHtml}
           <button class="cv-start-btn" id="cv-start-btn">${btnLabel} →</button>
+          ${SUMMARY[courseId] && (Data.COURSES[user.role] || []).some(c => c.id === courseId) ? `<div><a class="cv-sum-link" onclick="App.go('summary_unit','${courseId}')">📋 先看本單元重點整理</a></div>` : ''}
         </div>
       </div>
     `;
