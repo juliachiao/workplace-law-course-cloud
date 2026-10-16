@@ -142,11 +142,16 @@ const Cloud = (function () {
         <div class="cloud-card">
           <h2>👋 歡迎！請先填寫基本資料</h2>
           <p class="cloud-sub">只需要填寫一次，之後用同一個帳號登入就不用再填。</p>
-          <div class="cloud-acc">${providerId === 'google.com' ? 'Google' : 'Microsoft 365'} 帳號：<b>${escapeHtml(email)}</b>　<span class="cloud-tag">${group}</span></div>
+          <div class="cloud-acc">${providerId === 'google.com' ? 'Google' : 'Microsoft 365'} 帳號：<b>${escapeHtml(email)}</b></div>
           <label>姓名 <span class="req">*</span></label>
           <input id="cp-name" maxlength="30" value="${escapeHtml(fbUser.displayName || '')}">
           <label>單位／部門</label>
           <input id="cp-dept" maxlength="40" placeholder="例如：人資部、資訊系">
+          <label>您是 <span class="req">*</span></label>
+          <div class="cloud-roles">
+            <label class="cloud-role"><input type="radio" name="cp-group" value="校內" ${group === '校內' ? 'checked' : ''}> <span>🏫 校內師生</span></label>
+            <label class="cloud-role"><input type="radio" name="cp-group" value="校外" ${group === '校外' ? 'checked' : ''}> <span>🌐 校外人士</span></label>
+          </div>
           <label>學習身分 <span class="req">*</span></label>
           <div class="cloud-roles">
             <label class="cloud-role"><input type="radio" name="cp-role" value="new_employee" checked> <span>👤 新進人員<br><small>個資、職安、AI、資安 4 個單元</small></span></label>
@@ -168,8 +173,9 @@ const Cloud = (function () {
         if (!name) return err('請填寫姓名');
         if (!ov.querySelector('#cp-agree').checked) return err('請勾選同意個人資料蒐集與使用方式');
         const role = ov.querySelector('input[name="cp-role"]:checked').value;
+        const grp = ov.querySelector('input[name="cp-group"]:checked').value;
         ov.remove();
-        resolve({ name, email, dept: ov.querySelector('#cp-dept').value.trim(), role, provider: providerId, group,
+        resolve({ name, email, dept: ov.querySelector('#cp-dept').value.trim(), role, provider: providerId, group: grp,
           consentAt: new Date().toISOString() });
       };
     });
@@ -187,6 +193,8 @@ const Cloud = (function () {
   function bindLoginButtons() {
     const g = document.getElementById('cloud-google'), m = document.getElementById('cloud-ms');
     if (!g || !m) return;
+    // 還沒設定 Microsoft 365 登入時，先把按鈕藏起來（firebase-config.js 的 ENABLE_MICROSOFT）
+    if (window.ENABLE_MICROSOFT === false) m.style.display = 'none';
     if (!isReady()) {
       [g, m].forEach(b => { b.disabled = true; b.title = '雲端登入尚未設定（請參考 SETUP.md）'; });
       const note = document.getElementById('cloud-note'); if (note) note.textContent = '⚙️ 雲端登入尚未設定，目前請使用下方示範帳號登入';
