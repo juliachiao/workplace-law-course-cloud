@@ -122,7 +122,7 @@ const Cloud = (function () {
     const emp = Data.upsertEmployee({
       empId, name: profile.name, email: profile.email, dept: profile.dept || '', role: profile.role,
       active: true, password: Math.random().toString(36).slice(2), cloudUid: uid,
-      provider: profile.provider === 'microsoft.com' ? 'Microsoft 365' : 'Google', group: profile.group
+      provider: profile.provider === 'microsoft.com' ? 'Microsoft 365' : 'Google', group: profile.group, identity: profile.identity || ''
     });
     if (snap.exists && snap.data().data) Data.importUserBundle(empId, snap.data().data);   // 換裝置登入：接回雲端上的進度
     Data.setCurrentUser(emp);
@@ -136,12 +136,13 @@ const Cloud = (function () {
     return new Promise(resolve => {
       const email = (fbUser.email || (fbUser.providerData[0] || {}).email || '').toLowerCase();
       const group = groupOf(email, providerId);
+      const dom = (email.split('@')[1] || ''), schoolMatch = schoolDomains.some(d => dom === d || dom.endsWith('.' + d));   // 學校 email 才預先勾選「校內」
       const ov = document.createElement('div');
       ov.className = 'cloud-ov';
       ov.innerHTML = `
         <div class="cloud-card">
           <h2>👋 歡迎！請先填寫基本資料</h2>
-          <p class="cloud-sub">只需要填寫一次，之後用同一個帳號登入就不用再填。</p>
+          <p class="cloud-sub">只需要填寫一次，之後用同一個帳號登入就不用再填。<b>身分送出後無法自行更改</b>，如需更改請聯絡研究人員。</p>
           <div class="cloud-acc">${providerId === 'google.com' ? 'Google' : 'Microsoft 365'} 帳號：<b>${escapeHtml(email)}</b></div>
           <label>姓名 <span class="req">*</span></label>
           <input id="cp-name" maxlength="30" value="${escapeHtml(fbUser.displayName || '')}">
@@ -149,14 +150,17 @@ const Cloud = (function () {
           <input id="cp-dept" maxlength="40" placeholder="例如：人資部、資訊系">
           <label>您是 <span class="req">*</span></label>
           <div class="cloud-roles">
-            <label class="cloud-role"><input type="radio" name="cp-group" value="校內" ${group === '校內' ? 'checked' : ''}> <span>🏫 校內師生</span></label>
-            <label class="cloud-role"><input type="radio" name="cp-group" value="校外" ${group === '校外' ? 'checked' : ''}> <span>🌐 校外人士</span></label>
+            <label class="cloud-role"><input type="radio" name="cp-group" value="校內" ${schoolMatch ? 'checked' : ''}> <span>🏫 校內師生</span></label>
+            <label class="cloud-role"><input type="radio" name="cp-group" value="校外"> <span>🌐 校外人士</span></label>
           </div>
-          <label>學習身分 <span class="req">*</span></label>
-          <div class="cloud-roles">
-            <label class="cloud-role"><input type="radio" name="cp-role" value="new_employee" checked> <span>👤 新進人員<br><small>個資、職安、AI、資安 4 個單元</small></span></label>
-            <label class="cloud-role"><input type="radio" name="cp-role" value="manager"> <span>👔 主管人員<br><small>霸凌防治、性騷擾防治 2 個單元</small></span></label>
+          <label>身分 <span class="req">*</span></label>
+          <div class="cloud-roles cloud-ids">
+            <label class="cloud-role"><input type="radio" name="cp-id" value="學生" data-role="new_employee"> <span>🎓 學生</span></label>
+            <label class="cloud-role"><input type="radio" name="cp-id" value="一般員工" data-role="new_employee"> <span>💼 一般員工</span></label>
+            <label class="cloud-role"><input type="radio" name="cp-id" value="老師" data-role="manager"> <span>👩‍🏫 老師</span></label>
+            <label class="cloud-role"><input type="radio" name="cp-id" value="主管" data-role="manager"> <span>👔 主管</span></label>
           </div>
+          <div class="cloud-assign" id="cp-assign">請選擇身分，系統會自動分配適合的教材</div>
           <div class="cloud-consent">
             <b>個人資料蒐集告知</b><br>
             本網站為畢業專題研究使用，將蒐集您的姓名、email、單位與學習紀錄（影片觀看、測驗作答、學習時間），僅用於課程評鑑與學術研究分析，不會提供給第三方。研究結果將以匿名、整體統計的方式呈現。您可以隨時停止使用，並可要求刪除您的資料。
@@ -167,15 +171,27 @@ const Cloud = (function () {
         </div>`;
       document.body.appendChild(ov);
       const err = t => { ov.querySelector('#cp-err').textContent = t; };
+      // 依身分自動分配教材：學生、一般員工 → 員工篇；老師、主管 → 主管篇
+      const assign = ov.querySelector('#cp-assign');
+      ov.querySelectorAll('input[name="cp-id"]').forEach(r => r.addEventListener('change', () => {
+        const mgr = r.dataset.role === 'manager';
+        assign.className = 'cloud-assign on ' + (mgr ? 'mgr' : 'emp');
+        assign.innerHTML = mgr
+          ? '📘 將為您安排<b>主管篇</b>：職場霸凌預防、職場性騷擾防治 2 個單元＋主管篇 3D 遊戲'
+          : '📗 將為您安排<b>員工篇</b>：個資、職安、AI 使用、資訊安全 4 個單元＋員工篇 3D 遊戲';
+      }));
       ov.querySelector('#cp-cancel').onclick = () => { ov.remove(); resolve(null); };
       ov.querySelector('#cp-ok').onclick = () => {
         const name = ov.querySelector('#cp-name').value.trim();
         if (!name) return err('請填寫姓名');
+        const idEl = ov.querySelector('input[name="cp-id"]:checked');
+        if (!idEl) return err('請選擇您的身分');
+        const grpEl = ov.querySelector('input[name="cp-group"]:checked');
+        if (!grpEl) return err('請選擇校內師生或校外人士');
         if (!ov.querySelector('#cp-agree').checked) return err('請勾選同意個人資料蒐集與使用方式');
-        const role = ov.querySelector('input[name="cp-role"]:checked').value;
-        const grp = ov.querySelector('input[name="cp-group"]:checked').value;
+        const role = idEl.dataset.role, identity = idEl.value, grp = grpEl.value;
         ov.remove();
-        resolve({ name, email, dept: ov.querySelector('#cp-dept').value.trim(), role, provider: providerId, group: grp,
+        resolve({ name, email, dept: ov.querySelector('#cp-dept').value.trim(), role, identity, provider: providerId, group: grp,
           consentAt: new Date().toISOString() });
       };
     });
@@ -228,7 +244,7 @@ const Cloud = (function () {
       const d = doc.data(), pf = d.profile; if (!pf) return;
       const empId = empIdOf(doc.id);
       Data.upsertEmployee({ empId, name: pf.name, email: pf.email, dept: pf.dept || '', role: pf.role, active: true,
-        password: Math.random().toString(36).slice(2), cloudUid: doc.id, provider: pf.provider === 'microsoft.com' ? 'Microsoft 365' : 'Google', group: pf.group });
+        password: Math.random().toString(36).slice(2), cloudUid: doc.id, provider: pf.provider === 'microsoft.com' ? 'Microsoft 365' : 'Google', group: pf.group, identity: pf.identity || '' });
       if (d.data) Data.importUserBundle(empId, d.data);
       n++;
     });
