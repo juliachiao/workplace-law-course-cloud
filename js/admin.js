@@ -1019,6 +1019,15 @@ const Admin = (function () {
       return `<tr><td>${escapeHtml(g)}</td><td>${t.length}</td><td>${pctTxt(rate)}</td><td>${fmt1(avg(sc))}</td><td>${fmt1(avg(fin))}</td></tr>`;
     }).join('');
 
+    const idKey = e => e.identity || '未填（示範／員工編號帳號）';
+    const idRows = [...new Set(emps.map(idKey))].map(g => {
+      const t = emps.filter(e => idKey(e) === g);
+      const rate = avg(t.map(e => Data.getEmployeeOverallProgress(e.empId).percent));
+      const sc = []; t.forEach(e => (Data.COURSES[e.role] || []).forEach(c => { const p = Data.getProgress(e.empId, c.id); if (p.quizScore != null) sc.push(p.quizScore); }));
+      const fin = t.map(e => Data.getProgress(e.empId, 'final_' + e.role).quizScore).filter(v => v != null);
+      return `<tr><td>${escapeHtml(g)}</td><td>${t.length}</td><td>${pctTxt(rate)}</td><td>${fmt1(avg(sc))}</td><td>${fmt1(avg(fin))}</td></tr>`;
+    }).join('');
+
     const quizOptions = quizIds.map(id => `<option value="${id}" ${id === anQuiz ? 'selected' : ''}>${meta[id].icon} ${meta[id].title}</option>`).join('');
     const main = document.getElementById('admin-content');
     main.innerHTML = `
@@ -1064,6 +1073,15 @@ const Admin = (function () {
         <div class="an-table-wrap"><table class="data-table">
           <thead><tr><th>受測者來源</th><th>人數</th><th>平均完成率</th><th>單元測驗平均分數</th><th>總測驗平均分數</th></tr></thead>
           <tbody>${groupRows || '<tr><td colspan="5" style="text-align:center;color:var(--text-light)">尚無資料</td></tr>'}</tbody>
+        </table></div>
+      </div>
+
+      <div class="stat-card an-block">
+        <h3>🧑‍🤝‍🧑 身分類別比較</h3>
+        <p class="an-desc">學生、一般員工使用員工篇；老師、主管使用主管篇。</p>
+        <div class="an-table-wrap"><table class="data-table">
+          <thead><tr><th>身分</th><th>人數</th><th>平均完成率</th><th>單元測驗平均分數</th><th>總測驗平均分數</th></tr></thead>
+          <tbody>${idRows || '<tr><td colspan="5" style="text-align:center;color:var(--text-light)">尚無資料</td></tr>'}</tbody>
         </table></div>
       </div>
 
@@ -1128,13 +1146,13 @@ const Admin = (function () {
     const gameLogs = Data.getLogs().filter(l => l.type === 'game_opened');
     // 1. 學員總表
     const allCourses = [...Data.COURSES.new_employee, ...Data.COURSES.manager];
-    const s1 = [['員工編號', '姓名', 'Email', '登入方式', '校內／校外', '部門', '身分', '完成單元數', '應完成單元數', '完成率(%)', '總學習時間(分)']
+    const s1 = [['員工編號', '姓名', 'Email', '登入方式', '校內／校外', '身分類別', '部門', '教材', '完成單元數', '應完成單元數', '完成率(%)', '總學習時間(分)']
       .concat(allCourses.map(c => c.title + ' 分數'), ['總測驗分數', '總測驗通過', '開啟遊戲次數'])];
     emps.forEach(e => {
       const ov = Data.getEmployeeOverallProgress(e.empId);
       const study = (Data.COURSES[e.role] || []).reduce((a, c) => a + (Data.getProgress(e.empId, c.id).studySeconds || 0), 0);
       const fin = Data.getProgress(e.empId, 'final_' + e.role);
-      s1.push([e.empId, e.name, e.email || '', e.provider || '員工編號', e.group || '', e.dept || '', roleName(e.role), ov.completed, ov.total, ov.percent, Math.round(study / 6) / 10]
+      s1.push([e.empId, e.name, e.email || '', e.provider || '員工編號', e.group || '', e.identity || '', e.dept || '', roleName(e.role), ov.completed, ov.total, ov.percent, Math.round(study / 6) / 10]
         .concat(allCourses.map(c => { const p = Data.getProgress(e.empId, c.id); return p.quizScore != null ? p.quizScore : ''; }),
           [fin.quizScore != null ? fin.quizScore : '', fin.quizScore != null ? (fin.quizScore >= 80 ? '是' : '否') : '', gameLogs.filter(l => l.empId === e.empId).length]));
     });
