@@ -1,0 +1,6 @@
+﻿empId,name,email,dept,role,password
+E101,張三,zhang@systex.com,研發部,new_employee,
+E102,李四,li@systex.com,業務部,manager,
+E103,王美麗,wang@systex.com,行銷部,new_employee,
+E104,趙明,zhao@systex.com,財務部,manager,
+E105,孫小華,sun@systex.com,人資部,new_employee,

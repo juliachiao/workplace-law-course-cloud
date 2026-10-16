@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理後台 - 職場法律必修課</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=15" />
+</head>
+<body>
+
+<!-- 管理員登入頁 -->
+<div id="admin-login-page" class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand">
+      <img src="images/systex-logo.jpg" class="logo-img login-logo-img" alt="SYSTEX 精誠資訊">
+      <h1>管理後台</h1>
+      <p>企業訓練平台 - 後台系統</p>
+    </div>
+
+    <form id="admin-login-form">
+      <div class="form-group">
+        <label>管理員帳號</label>
+        <input type="text" id="admin-username" placeholder="請輸入管理員帳號" required />
+      </div>
+      <div class="form-group">
+        <label>密碼</label>
+        <input type="password" id="admin-password" placeholder="請輸入密碼" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">進入後台</button>
+    </form>
+
+    <div class="login-hint">
+      <strong>示範帳號:</strong><br>
+      帳號: admin / 密碼: admin123
+    </div>
+
+    <div class="login-switch">
+      <a href="index.html">← 回到員工登入</a>
+    </div>
+  </div>
+</div>
+
+<!-- 後台主介面 -->
+<div id="admin-page" class="hidden">
+  <div class="admin-layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h2>管理後台</h2>
+        <p>SYSTEX 企業訓練</p>
+      </div>
+      <ul class="sidebar-menu">
+        <li><a data-page="dashboard" class="active">📊 儀表板</a></li>
+        <li><a data-page="analytics">📈 數據分析</a></li>
+        <li><a data-page="employees">👥 員工管理</a></li>
+        <li><a data-page="videos">🎬 課程影片設定</a></li>
+        <li><a data-page="learning">📚 學習狀況</a></li>
+        <li><a data-page="logs">📝 登入紀錄</a></li>
+        <li><a data-page="deadline">⏰ 截止日設定</a></li>
+        <li><a data-page="announcements">📢 公告欄管理</a></li>
+        <li><a data-page="export">📥 資料匯出</a></li>
+        <li style="margin-top:30px; border-top:1px solid var(--border); padding-top:20px;">
+          <a id="admin-logout">🚪 登出</a>
+        </li>
+      </ul>
+    </aside>
+
+    <main class="admin-main" id="admin-content">
+      <!-- 動態渲染 -->
+    </main>
+  </div>
+</div>
+
+<!-- Modal: 新增/編輯員工 -->
+<div class="modal-overlay" id="emp-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="emp-modal-title">新增員工</h3>
+      <button class="modal-close" onclick="document.getElementById('emp-modal').classList.remove('show')">×</button>
+    </div>
+    <form id="emp-form">
+      <input type="hidden" id="emp-orig-id" />
+      <div class="form-group">
+        <label>員工編號 *</label>
+        <input type="text" id="emp-id" required />
+      </div>
+      <div class="form-group">
+        <label>姓名 *</label>
+        <input type="text" id="emp-name" required />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="emp-email" />
+      </div>
+      <div class="form-group">
+        <label>部門</label>
+        <input type="text" id="emp-dept" />
+      </div>
+      <div class="form-group">
+        <label>身份</label>
+        <select id="emp-role">
+          <option value="new_employee">新進人員</option>
+          <option value="manager">主管人員</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>登入密碼 (預設為員工編號)</label>
+        <input type="text" id="emp-password" placeholder="留空則使用員工編號" />
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('emp-modal').classList.remove('show')">取消</button>
+        <button type="submit" class="btn btn-primary">儲存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: 匯入 CSV -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>匯入員工資料 (CSV)</h3>
+      <button class="modal-close" onclick="document.getElementById('import-modal').classList.remove('show')">×</button>
+    </div>
+    <div>
+      <p style="margin-bottom:16px; color:var(--text-light);">CSV 欄位格式 (第一列為標題):</p>
+      <pre style="background:#f5f5f5; padding:16px; border-radius:8px; font-size:13px; overflow-x:auto;">empId,name,email,dept,role,password
+E101,張三,zhang@systex.com,研發部,new_employee,
+E102,李四,li@systex.com,業務部,manager,</pre>
+
+      <div style="margin-top:20px;">
+        <label class="btn btn-secondary" style="cursor:pointer; display:inline-block;">
+          選擇 CSV 檔案
+          <input type="file" id="csv-file" accept=".csv" style="display:none;" />
+        </label>
+        <button class="btn btn-primary" id="download-sample" style="margin-left:8px;">下載範例 CSV</button>
+      </div>
+
+      <div id="import-result" style="margin-top:20px; display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: 員工學習詳情 -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal" style="max-width:720px;">
+    <div class="modal-header">
+      <h3 id="detail-title">學習詳情</h3>
+      <button class="modal-close" onclick="document.getElementById('detail-modal').classList.remove('show')">×</button>
+    </div>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="js/firebase-config.js?v=1"></script>
+<script src="js/data.js?v=12"></script>
+<script src="js/cloud.js?v=1"></script>
+<script src="js/admin.js?v=12"></script>
+</body>
+</html>

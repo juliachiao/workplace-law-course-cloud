@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 管理員：可以讀取所有學員的資料（後台「載入雲端數據」用）
+    // ↓↓↓ 把下面的信箱換成你的管理員 Google 帳號（可以放多個，用逗號隔開）
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email in ['your-admin@gmail.com'];
+    }
+
+    // 每位學員只能讀寫自己的資料
+    match /learners/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read: if isAdmin();
+    }
+  }
+}
