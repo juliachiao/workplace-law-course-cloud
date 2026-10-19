@@ -53,6 +53,7 @@ const Admin = (function () {
     ({
       dashboard:     renderDashboard,
       analytics:     renderAnalytics,
+      survey:        renderSurveyResults,
       employees:     renderEmployees,
       videos:        renderVideos,
       learning:      renderLearning,
@@ -845,7 +846,7 @@ const Admin = (function () {
 
         <div class="stat-card" style="border:2px solid #6c5ce7; background:#f6f4ff;">
           <h3>📦 完整數據（Excel）</h3>
-          <p style="color:var(--text-light); margin:12px 0;">一個檔案包含所有數據：學員總表、單元學習紀錄、測驗作答紀錄、逐題作答明細、題目分析、操作紀錄（每項一個工作表），可直接用來做評鑑分析。</p>
+          <p style="color:var(--text-light); margin:12px 0;">一個檔案包含所有數據：學員總表、單元學習紀錄、測驗作答紀錄、逐題作答明細、題目分析、操作紀錄、滿意度問卷（每項一個工作表），可直接用來做評鑑分析。</p>
           <button class="btn btn-primary" id="exp-all">下載完整數據</button>
         </div>
 
@@ -1127,6 +1128,75 @@ const Admin = (function () {
     drawQuizDetail();
   }
 
+  // =====================================================================
+  // ===== 滿意度問卷結果 =====
+  // =====================================================================
+  let svRole = 'all';
+  const sd = arr => { if (arr.length < 2) return null; const m = arr.reduce((a, b) => a + b, 0) / arr.length; return Math.sqrt(arr.reduce((a, b) => a + (b - m) * (b - m), 0) / (arr.length - 1)); };
+  function susGrade(s) {
+    if (s == null) return '-';
+    if (s >= 85) return '優秀';
+    if (s >= 72) return '良好';
+    if (s >= 68) return '高於平均';
+    if (s >= 51) return '尚可';
+    return '待改進';
+  }
+  function renderSurveyResults() {
+    const S = Data.SURVEY;
+    const emps = Data.getEmployees().filter(e => e.active !== false && (svRole === 'all' || e.role === svRole));
+    const all = Data.getAllSurveys();
+    const rows = emps.map(e => ({ e, s: all[e.empId] })).filter(x => x.s);
+    const finished = emps.filter(e => Data.getProgress(e.empId, 'final_' + e.role).quizScore != null);
+    const susScores = rows.map(x => x.s.susScore).filter(v => v != null);
+    const susAvg = susScores.length ? susScores.reduce((a, b) => a + b, 0) / susScores.length : null;
+    const allLikert = []; rows.forEach(x => Object.values(x.s.answers || {}).forEach(v => allLikert.push(v)));
+    const e1 = rows.map(x => (x.s.answers || {}).E1).filter(Boolean);
+    const f1 = v => v == null ? '-' : (Math.round(v * 100) / 100).toFixed(2);
+    const itemRow = (id, text, getVal) => {
+      const vals = rows.map(x => getVal(x.s)).filter(v => v != null);
+      const cnt = [1, 2, 3, 4, 5].map(k => vals.filter(v => v === k).length);
+      const mean = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      const bar = vals.length ? cnt.map((c, k) => `<span style="flex:${c || 0.0001}; background:${['#d9534f', '#f0ad4e', '#c8ccd4', '#7cc49a', '#2e8b57'][k]}" title="${k + 1} 分：${c} 人"></span>`).join('') : '';
+      return `<tr><td class="sv-id">${id}</td><td>${escapeHtml(text)}</td><td>${vals.length}</td><td><b>${f1(mean)}</b></td><td>${f1(sd(vals))}</td>
+        <td><div class="sv-dist">${bar}</div><div class="sv-dist-n">${cnt.join(' / ')}</div></td></tr>`;
+    };
+    const head = '<thead><tr><th>題號</th><th>題目</th><th>人數</th><th>平均</th><th>標準差</th><th>分布（1～5 分人數）</th></tr></thead>';
+    const satRows = S.sections.map(sec => `<tr class="sv-sec-row"><td colspan="6">${sec.title}${sec.game ? '（只統計玩過遊戲的人）' : ''}</td></tr>` +
+      sec.items.map(it => itemRow(it.id, it.t, s => (s.answers || {})[it.id])).join('')).join('');
+    const susRows = S.sus.map((t, i) => itemRow('SUS' + (i + 1), t + (i % 2 ? '（反向題）' : ''), s => (s.sus || [])[i])).join('');
+    const selfRoles = svRole === 'all' ? ['new_employee', 'manager'] : [svRole];
+    const selfRows = selfRoles.map(r => `<tr class="sv-sec-row"><td colspan="6">${r === 'manager' ? '主管篇' : '員工篇'}</td></tr>` +
+      S.self[r].map(it => itemRow(it.id, it.t, s => s.role === r ? (s.answers || {})[it.id] : null)).join('')).join('');
+    const bins = [[0, 51], [51, 68], [68, 72], [72, 85], [85, 101]], binLab = ['待改進 <51', '尚可 51–67', '高於平均 68–71', '良好 72–84', '優秀 85+'];
+    const susDist = bins.map(([a, b]) => susScores.filter(v => v >= a && v < b).length);
+    const opens = S.open.map(o => {
+      const list = rows.map(x => ({ who: x.e, t: (x.s.open || {})[o.id] })).filter(x => x.t);
+      return `<div class="sv-open"><h4>${o.t}（${list.length} 則）</h4>${list.length ? list.map(x => `<div class="sv-open-item">「${escapeHtml(x.t)}」<span>— ${x.who.role === 'manager' ? '主管篇' : '員工篇'}${x.who.group ? '・' + x.who.group : ''}</span></div>`).join('') : '<p class="an-empty">尚無回答</p>'}</div>`;
+    }).join('');
+    const main = document.getElementById('admin-content');
+    main.innerHTML = `
+      <div class="admin-header"><h1>問卷結果</h1>
+        <div class="an-filter">${[['all', '全部'], ['new_employee', '員工篇'], ['manager', '主管篇']].map(([v, t]) => `<button class="an-chip ${svRole === v ? 'on' : ''}" data-role="${v}">${t}</button>`).join('')}</div></div>
+      ${typeof Cloud !== 'undefined' && Cloud.isReady && Cloud.isReady() ? `<div class="an-note an-cloud-row"><span>☁️ 分析前請先載入雲端數據，才會包含用 Google 登入的學員</span><button class="btn btn-primary" id="sv-cloud">☁️ 載入雲端數據</button></div>` : ''}
+      <div class="stat-grid">
+        <div class="stat-card"><div class="stat-label">問卷回收</div><div class="stat-value">${rows.length} <small>/ ${finished.length} 位完成總測驗者</small></div></div>
+        <div class="stat-card"><div class="stat-label">回收率</div><div class="stat-value green">${finished.length ? Math.round(rows.length * 100 / finished.length) + '%' : '-'}</div></div>
+        <div class="stat-card"><div class="stat-label">整體滿意度（E1）</div><div class="stat-value orange">${f1(e1.length ? e1.reduce((a, b) => a + b, 0) / e1.length : null)} <small>/ 5</small></div></div>
+        <div class="stat-card"><div class="stat-label">課程滿意度（全部題目平均）</div><div class="stat-value">${f1(allLikert.length ? allLikert.reduce((a, b) => a + b, 0) / allLikert.length : null)} <small>/ 5</small></div></div>
+        <div class="stat-card"><div class="stat-label">SUS 易用性分數</div><div class="stat-value">${susAvg == null ? '-' : susAvg.toFixed(1)} <small>${susGrade(susAvg)}</small></div></div>
+      </div>
+      <div class="stat-card an-block"><h3>📊 SUS 系統易用性</h3>
+        <p class="an-desc">SUS（System Usability Scale）滿分 100 分，68 分為一般系統的平均水準，高於 68 分代表易用性在平均以上。計分方式：奇數題（分數 − 1）、偶數題（5 − 分數），加總後 × 2.5。</p>
+        <div class="sv-sus-bars">${susDist.map((c, i) => `<div class="sv-sus-bar"><div class="sv-sus-fill" style="height:${susScores.length ? c * 100 / Math.max(...susDist, 1) : 0}%"></div><b>${c}</b><span>${binLab[i]}</span></div>`).join('')}</div>
+      </div>
+      <div class="stat-card an-block"><h3>😊 課程滿意度</h3><div class="an-table-wrap"><table class="data-table sv-table">${head}<tbody>${rows.length ? satRows : '<tr><td colspan="6" style="text-align:center;color:var(--text-light)">尚無資料</td></tr>'}</tbody></table></div></div>
+      <div class="stat-card an-block"><h3>🎯 學習成效自評</h3><div class="an-table-wrap"><table class="data-table sv-table">${head}<tbody>${rows.length ? selfRows : '<tr><td colspan="6" style="text-align:center;color:var(--text-light)">尚無資料</td></tr>'}</tbody></table></div></div>
+      <div class="stat-card an-block"><h3>🖥️ SUS 各題結果</h3><div class="an-table-wrap"><table class="data-table sv-table">${head}<tbody>${rows.length ? susRows : '<tr><td colspan="6" style="text-align:center;color:var(--text-light)">尚無資料</td></tr>'}</tbody></table></div></div>
+      <div class="stat-card an-block"><h3>💬 開放式回饋</h3>${opens}</div>`;
+    main.querySelectorAll('.an-chip').forEach(b => b.onclick = () => { svRole = b.dataset.role; renderSurveyResults(); });
+    const cb = main.querySelector('#sv-cloud'); if (cb) cb.onclick = () => loadCloud(renderSurveyResults);
+  }
+
   // ===== 載入雲端數據 =====
   async function loadCloud(after) {
     if (typeof Cloud === 'undefined' || !Cloud.isReady()) { toast('雲端登入尚未設定，請先完成 firebase-config.js 的設定', 'error'); return; }
@@ -1183,7 +1253,18 @@ const Admin = (function () {
     // 6. 操作紀錄
     const s6 = [['時間', '員工編號', '姓名', '類型', '內容']];
     Data.getLogs().forEach(l => { const e = emps.find(x => x.empId === l.empId) || {}; s6.push([l.at, l.empId, e.name || '', typeLabel(l.type), l.detail || '']); });
-    return [['學員總表', s1], ['單元學習紀錄', s2], ['測驗作答紀錄', s3], ['逐題作答明細', s4], ['題目分析', s5], ['操作紀錄', s6]];
+    // 7. 滿意度問卷（每人一列）
+    const SV = Data.SURVEY, svAll = Data.getAllSurveys();
+    const likIds = []; SV.sections.forEach(sec => sec.items.forEach(it => likIds.push(it.id)));
+    const s7 = [['員工編號', '姓名', '身分', '教材', '校內／校外', '填寫時間', '總測驗分數', '玩過遊戲']
+      .concat(likIds, SV.sus.map((_, i) => 'SUS' + (i + 1)), ['SUS 分數', 'S1', 'S2', 'S3', 'S4'], SV.open.map(o => o.t))];
+    Object.entries(svAll).forEach(([empId, r]) => {
+      const e = emps.find(x => x.empId === empId) || {};
+      s7.push([empId, e.name || '', e.identity || '', roleName(r.role), e.group || '', r.submittedAt || '', r.finalScore != null ? r.finalScore : '', r.playedGame ? '是' : '否']
+        .concat(likIds.map(id => (r.answers || {})[id] != null ? r.answers[id] : ''), (r.sus || []).map(v => v == null ? '' : v),
+          [r.susScore != null ? r.susScore : ''], ['S1', 'S2', 'S3', 'S4'].map(id => (r.answers || {})[id] != null ? r.answers[id] : ''), SV.open.map(o => (r.open || {})[o.id] || '')));
+    });
+    return [['學員總表', s1], ['單元學習紀錄', s2], ['測驗作答紀錄', s3], ['逐題作答明細', s4], ['題目分析', s5], ['操作紀錄', s6], ['滿意度問卷', s7]];
   }
   function downloadAllExcel() {
     const sheets = buildAllSheets();
@@ -1225,7 +1306,12 @@ const Admin = (function () {
       video_ended: '影片結束',
       video_watched: '影片達標',
       quiz_submitted: '送出測驗',
-      course_completed: '完成課程'
+      course_completed: '完成課程',
+      final_exam_submitted: '送出總測驗',
+      game_opened: '開啟 3D 遊戲',
+      summary_view: '查看重點整理',
+      resources_view: '查看求助資源',
+      survey_submitted: '填寫滿意度問卷'
     })[t] || t;
   }
 

@@ -19,6 +19,14 @@ const Cloud = (function () {
   }
   const COL = 'learners';
   const isReady = () => !!(auth && db);
+  // Firestore 不支援「陣列裡面再放陣列」（影片觀看片段就是這種格式），
+  // 所以學習資料一律轉成 JSON 文字存放；讀取時也相容舊的格式
+  const packData = bundle => JSON.stringify(bundle);
+  function unpackData(doc) {
+    if (!doc) return null;
+    if (typeof doc.dataJson === 'string') { try { return JSON.parse(doc.dataJson); } catch (e) { return null; } }
+    return doc.data || null;
+  }
   const empIdOf = uid => 'U' + uid.slice(0, 10);
   const schoolDomains = (window.SCHOOL_EMAIL_DOMAINS || []).map(d => d.toLowerCase());
   function groupOf(email, provider) {
@@ -44,14 +52,14 @@ const Cloud = (function () {
     syncing = true;
     try {
       await db.collection(COL).doc(u.cloudUid).set({
-        data: Data.exportUserBundle(u.empId),
+        dataJson: packData(Data.exportUserBundle(u.empId)),
         updatedAt: new Date().toISOString()
       }, { merge: true });
     } catch (e) { console.warn('雲端同步失敗，稍後會再試一次', e); setTimeout(scheduleSync, 15000); }
     syncing = false;
   }
   // 在原本的資料寫入函式後面，加上「同步到雲端」
-  ['setProgress', 'recordVideoSegment', 'setVideoMeta', 'addLog', 'addQuizAttempt', 'saveWrongAnswers', 'addBookmark', 'deleteBookmark'].forEach(fn => {
+  ['setProgress', 'recordVideoSegment', 'setVideoMeta', 'addLog', 'addQuizAttempt', 'saveWrongAnswers', 'addBookmark', 'deleteBookmark', 'saveSurvey'].forEach(fn => {
     const orig = Data[fn];
     if (typeof orig !== 'function') return;
     Data[fn] = function () { const r = orig.apply(this, arguments); scheduleSync(); return r; };
@@ -63,7 +71,7 @@ const Cloud = (function () {
     const r = origLogout.apply(this, arguments);
     if (isReady() && isCloudUser(u)) {
       const uid = u.cloudUid, bundle = Data.exportUserBundle(u.empId);
-      db.collection(COL).doc(uid).set({ data: bundle, updatedAt: new Date().toISOString() }, { merge: true })
+      db.collection(COL).doc(uid).set({ dataJson: packData(bundle), updatedAt: new Date().toISOString() }, { merge: true })
         .catch(() => {}).finally(() => auth.signOut().catch(() => {}));
     }
     return r;
@@ -124,7 +132,8 @@ const Cloud = (function () {
       active: true, password: Math.random().toString(36).slice(2), cloudUid: uid,
       provider: profile.provider === 'microsoft.com' ? 'Microsoft 365' : 'Google', group: profile.group, identity: profile.identity || ''
     });
-    if (snap.exists && snap.data().data) Data.importUserBundle(empId, snap.data().data);   // 換裝置登入：接回雲端上的進度
+    const cloudData = snap.exists ? unpackData(snap.data()) : null;
+    if (cloudData) Data.importUserBundle(empId, cloudData);   // 換裝置登入：接回雲端上的進度
     Data.setCurrentUser(emp);
     Data.addLog(empId, 'login', '雲端登入（' + emp.provider + '）');
     showMsg('歡迎，' + emp.name + '！', 'success');
@@ -245,7 +254,8 @@ const Cloud = (function () {
       const empId = empIdOf(doc.id);
       Data.upsertEmployee({ empId, name: pf.name, email: pf.email, dept: pf.dept || '', role: pf.role, active: true,
         password: Math.random().toString(36).slice(2), cloudUid: doc.id, provider: pf.provider === 'microsoft.com' ? 'Microsoft 365' : 'Google', group: pf.group, identity: pf.identity || '' });
-      if (d.data) Data.importUserBundle(empId, d.data);
+      const cd = unpackData(d);
+      if (cd) Data.importUserBundle(empId, cd);
       n++;
     });
     return { count: n, admin: auth.currentUser.email };

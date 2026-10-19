@@ -22,7 +22,8 @@ const Data = (function () {
     NOTICES_READ: 'tp_notices_read',
     WRONG_ANSWERS: 'tp_wrong_answers',
     BOOKMARKS: 'tp_bookmarks',
-    QUIZ_ATTEMPTS: 'tp_quiz_attempts'   // 每一次測驗的作答明細（數據分析用）
+    QUIZ_ATTEMPTS: 'tp_quiz_attempts',  // 每一次測驗的作答明細（數據分析用）
+    SURVEYS: 'tp_surveys'               // 滿意度問卷
   };
 
   // 內建課程資料 (對應 PDF 內容)
@@ -428,6 +429,73 @@ const Data = (function () {
   }
 
   // 重置示範資料 (僅供 demo)
+  // =====================================================================
+  // ===== 滿意度問卷（總測驗完成後填寫）=====
+  // 題目都集中在這裡，要改題目只需修改這個物件；題目 id 不要重複
+  // =====================================================================
+  const SURVEY = {
+    likert: ['非常不同意', '不同意', '普通', '同意', '非常同意'],
+    sections: [
+      { id: 'A', title: '一、教材內容', items: [
+        { id: 'A1', t: '課程內容清楚、容易理解' },
+        { id: 'A2', t: '課程內容與職場工作相關、實用' },
+        { id: 'A3', t: '課程的份量與學習時間安排適當' } ] },
+      { id: 'B', title: '二、影片教學', items: [
+        { id: 'B1', t: '影片長度適中，不會太長或太短' },
+        { id: 'B2', t: '情境劇的呈現方式有助於我理解內容' } ] },
+      { id: 'C', title: '三、測驗與複習', items: [
+        { id: 'C1', t: '單元測驗能幫助我檢核學習成果' },
+        { id: 'C2', t: '錯題本與題目解析有助於我複習' },
+        { id: 'C3', t: '重點整理方便我快速複習課程重點' } ] },
+      { id: 'D', title: '四、3D 闖關遊戲', game: true, items: [
+        { id: 'D1', t: '3D 闖關遊戲有趣，能吸引我投入學習' },
+        { id: 'D2', t: '遊戲裡的情境與小遊戲，能加深我對課程內容的印象' },
+        { id: 'D3', t: '遊戲的操作方式與引導提示清楚' } ] },
+      { id: 'E', title: '五、整體滿意度', items: [
+        { id: 'E1', t: '整體而言，我對這門課程感到滿意' },
+        { id: 'E2', t: '我願意推薦這門課程給同事或同學' } ] },
+    ],
+    // 系統易用性量表（System Usability Scale, SUS）：奇數題為正向題、偶數題為反向題
+    sus: [
+      '我想我會願意經常使用這個學習平台',
+      '我覺得這個學習平台過於複雜',
+      '我覺得這個學習平台很容易使用',
+      '我想我需要有技術人員的協助，才能使用這個學習平台',
+      '我覺得這個學習平台的各項功能整合得很好',
+      '我覺得這個學習平台有太多不一致的地方',
+      '我想大部分的人都能很快學會使用這個學習平台',
+      '我覺得這個學習平台使用起來很不方便',
+      '使用這個學習平台時，我覺得很有信心',
+      '我需要先學會很多事情，才能開始使用這個學習平台',
+    ],
+    self: {
+      new_employee: [
+        { id: 'S1', t: '我了解一般個資與特種個資的差異，並知道如何妥善處理個資' },
+        { id: 'S2', t: '我能辨識辦公室常見的職安風險，並知道「看、避、報」的做法' },
+        { id: 'S3', t: '我知道使用 AI 工具前要去識別化，並查證 AI 產出的內容' },
+        { id: 'S4', t: '我能辨識釣魚郵件的特徵，並知道遇到資安事件該如何處理' } ],
+      manager: [
+        { id: 'S1', t: '我能判斷職場霸凌的情形，並了解主管的處理原則' },
+        { id: 'S2', t: '我知道主管「知悉」性騷擾後應立即採取的處理流程' },
+        { id: 'S3', t: '我了解處理申訴時應保密，並避免對申訴人做出不利的處置' },
+        { id: 'S4', t: '我有信心在實際工作中，處理類似的職場事件' } ],
+    },
+    open: [
+      { id: 'O1', t: '這門課程中，您覺得最有幫助的部分是什麼？' },
+      { id: 'O2', t: '您覺得哪些地方需要改進？' },
+      { id: 'O3', t: '其他建議或想法' },
+    ],
+  };
+  // SUS 計分：奇數題（分數 − 1）、偶數題（5 − 分數），加總 × 2.5，滿分 100
+  function calcSUS(arr) {
+    if (!arr || arr.length !== 10 || arr.some(v => !v)) return null;
+    return arr.reduce((s, v, i) => s + (i % 2 === 0 ? v - 1 : 5 - v), 0) * 2.5;
+  }
+
+  function saveSurvey(empId, data) { const all = get(KEYS.SURVEYS, {}); all[empId] = data; set(KEYS.SURVEYS, all); }
+  function getSurvey(empId) { return get(KEYS.SURVEYS, {})[empId] || null; }
+  function getAllSurveys() { return get(KEYS.SURVEYS, {}); }
+
   // ===== 測驗作答明細（每次作答都保留，用於題目分析、前後次比較）=====
   function addQuizAttempt(empId, quizId, score, items) {
     const all = get(KEYS.QUIZ_ATTEMPTS, []);
@@ -445,7 +513,7 @@ const Data = (function () {
 
   // ===== 完整備份（JSON）：匯出、匯入合併 =====
   // 用途：在不同電腦收集的資料，可以各自匯出後，再匯入到同一台電腦合併分析
-  const BACKUP_KEYS = ['EMPLOYEES', 'LOGS', 'PROGRESS', 'WRONG_ANSWERS', 'BOOKMARKS', 'QUIZ_ATTEMPTS'];
+  const BACKUP_KEYS = ['EMPLOYEES', 'LOGS', 'PROGRESS', 'WRONG_ANSWERS', 'BOOKMARKS', 'QUIZ_ATTEMPTS', 'SURVEYS'];
   function exportBackup() {
     const data = {};
     BACKUP_KEYS.forEach(k => { data[k] = get(KEYS[k], null); });
@@ -485,7 +553,7 @@ const Data = (function () {
       d.QUIZ_ATTEMPTS.forEach(a => { if (!seen.has(a.id)) { seen.add(a.id); at.push(a); summary.attempts++; } });
       set(KEYS.QUIZ_ATTEMPTS, at);
     }
-    ['WRONG_ANSWERS', 'BOOKMARKS'].forEach(k => {
+    ['WRONG_ANSWERS', 'BOOKMARKS', 'SURVEYS'].forEach(k => {
       if (d[k]) set(KEYS[k], { ...d[k], ...get(KEYS[k], {}) });
     });
     return summary;
@@ -507,7 +575,8 @@ const Data = (function () {
       logs: get(KEYS.LOGS, []).filter(l => l.empId === empId).slice(-800),
       attempts: get(KEYS.QUIZ_ATTEMPTS, []).filter(a => a.empId === empId),
       wrong: (get(KEYS.WRONG_ANSWERS, {})[empId]) || {},
-      bookmarks: (get(KEYS.BOOKMARKS, {})[empId]) || {}
+      bookmarks: (get(KEYS.BOOKMARKS, {})[empId]) || {},
+      survey: (get(KEYS.SURVEYS, {})[empId]) || null
     };
   }
   // 把雲端的資料合併回這台電腦（換裝置登入、後台載入雲端數據時使用）
@@ -528,6 +597,7 @@ const Data = (function () {
     set(KEYS.QUIZ_ATTEMPTS, at);
     const w = get(KEYS.WRONG_ANSWERS, {}); w[empId] = { ...(b.wrong || {}), ...(w[empId] || {}) }; set(KEYS.WRONG_ANSWERS, w);
     const bm = get(KEYS.BOOKMARKS, {}); bm[empId] = { ...(b.bookmarks || {}), ...(bm[empId] || {}) }; set(KEYS.BOOKMARKS, bm);
+    if (b.survey) { const sv = get(KEYS.SURVEYS, {}); if (!sv[empId]) { sv[empId] = b.survey; set(KEYS.SURVEYS, sv); } }
   }
 
   function resetAll() {
@@ -555,7 +625,8 @@ const Data = (function () {
     saveWrongAnswers, getWrongAnswers,
     addBookmark, getBookmarks, deleteBookmark,
     addQuizAttempt, getQuizAttempts, exportBackup, importBackupMerge,
-    setCurrentUser, upsertEmployee, exportUserBundle, importUserBundle
+    setCurrentUser, upsertEmployee, exportUserBundle, importUserBundle,
+    SURVEY, calcSUS, saveSurvey, getSurvey, getAllSurveys
   };
 
   // ===== 錯題本 =====
