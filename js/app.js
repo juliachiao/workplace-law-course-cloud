@@ -1169,7 +1169,7 @@ const App = (function () {
   }
 
   function renderFinalExamResults(role, score) {
-    const qs = FINAL_QUIZ_BANK[role] || [];
+    const qs = getPaper('final:' + role, FINAL_QUIZ_BANK[role] || []);
     const passed = score >= 80;
     const section = document.getElementById('final-exam-section');
     if (!section) return;
@@ -1957,7 +1957,7 @@ const App = (function () {
     const btn = document.getElementById('submit-quiz');
     if (!btn) return;
     btn.addEventListener('click', () => {
-      const qs = QUIZ_BANK[courseId] || [];
+      const qs = getPaper('unit:' + courseId, QUIZ_BANK[courseId] || []);
       const userAnswers = qs.map((q, qi) => {
         const picked = document.querySelector(`input[name="q${qi}"]:checked`);
         return picked ? parseInt(picked.value) : -1;
@@ -1972,7 +1972,7 @@ const App = (function () {
       const user = Data.getCurrentUser();
       Data.setProgress(user.empId, courseId, { quizScore: score });
       Data.addLog(user.empId, 'quiz_submitted', `測驗: ${courseId} 得 ${score} 分`);
-      try { Data.addQuizAttempt(user.empId, courseId, score, qs.map((q, i) => ({ q: q.q, ok: userAnswers[i] === q.a }))); } catch (e) {}
+      try { Data.addQuizAttempt(user.empId, courseId, score, toSourceOrder(qs, qs.map((q, i) => ({ q: q.q, ok: userAnswers[i] === q.a })))); } catch (e) {}
       const wrongs = qs.reduce((acc, q, i) => {
         if (userAnswers[i] !== q.a) acc.push({ q: q.q, opts: q.opts, a: q.a, ua: userAnswers[i], explain: q.explain });
         return acc;
@@ -1986,7 +1986,7 @@ const App = (function () {
   }
 
   function renderQuizResults(courseId, userAnswers, role) {
-    const qs = QUIZ_BANK[courseId] || [];
+    const qs = getPaper('unit:' + courseId, QUIZ_BANK[courseId] || []);
     const correct = userAnswers.filter((ans, i) => ans === qs[i].a).length;
     const score = qs.length ? Math.round(correct * 100 / qs.length) : 0;
     const passed = score >= 80;
@@ -2338,10 +2338,10 @@ const App = (function () {
     bullying: [
       { q: '小強主管在辦公室當眾羞辱小誠「沒帶腦袋上班」，並隨即要求他明天去倉庫點貨且扣發獎金。事後小強辯稱：「我才罵這一次，以前法律不是說要『持續發生』才算霸凌嗎？」<br><br>問題：根據 2026 年新法紅線，下列敘述何者正確？',
         opts: ['只要不是「持續發生」，單次嚴重的言語辱罵並不構成霸凌。', '只要造成身心危害，即便單次嚴重的人格侮辱，霸凌即可成立。', '若企業未訂定防治措施導致霸凌發生，最高行政罰鍰為 100 萬元。', '霸凌導致員工發生職業病時，最高可重罰企業 75 萬元。'], a: 1,
-        explain: '未訂防治措施最高罰 75 萬；霸凌導致職業病最高可重罰 300 萬，C、D 選項數字對調為陷阱。' },
+        explain: '只要造成身心危害，單次嚴重的人格侮辱即可成立霸凌。另外要注意罰鍰金額：未訂防治措施最高罰 75 萬元、霸凌導致職業病最高罰 300 萬元，題目中把兩個數字對調是陷阱。' },
       { q: '小妤主管下班後與同事喝咖啡，無意間聽到「耳語」傳聞某部門發生霸凌事件，但目前並無受害者正式提交書面申訴。<br><br>問題：此時小妤主管與公司管理層應如何處理？',
-        opts: ['為了程序正義，必須等待受害者寫正式申訴信後才能啟動調查處置。', '若採取「被動等待」而不作為，最高可能面臨 100 萬元的罰鍰。', '應立即啟動調查，且 100 人以上企業，調查小組中外部專業人士比例不得少於 1/3。', '為了維護公司名譽，應先找雙方主管「搓湯圓」和解。'], a: 1,
-        explain: '法律不看形式，只要主管「知悉」就負有主動釐清義務；外部專業人士比例應為 1/2，C 選項為陷阱。' },
+        opts: ['為了程序正義，必須等待受害者寫正式申訴信後才能啟動調查處置。', '主管一旦「知悉」，即使沒有書面申訴，也負有主動釐清事實並採取措施的義務。', '應立即啟動調查，且 100 人以上企業，調查小組中外部專業人士比例不得少於 1/3。', '為了維護公司名譽，應先找雙方主管「搓湯圓」和解。'], a: 1,
+        explain: '法律不看形式，只要主管「知悉」就負有主動釐清義務，不能以沒有書面申訴為由消極等待。另外，100 人以上企業的調查小組，外部專業人士比例應為二分之一，不是三分之一。' },
       { q: '公司負責人經認定有霸凌行為，受害者向地方主管機關提起外部申訴。進入勞動法庭後，公司因平時管理紀錄不全，拿不出完整的出勤紀錄或防治紀錄。<br><br>問題：下列關於此案例法律後果的敘述，哪一項是錯誤的？',
         opts: ['若負責人經認定霸凌成立，將面臨 1 萬至 100 萬元的個人罰鍰，且不得由公司代付。', '在《勞動事件法》下，雇主若拿不出管理紀錄，法院得直接認定勞方的主張為真實。', '違規企業將被強制公布名稱與負責人姓名，這對商譽是不可逆的損害。', '雇主有權在調查期間隨意調動申訴人的職位，作為經營需要的調整。'], a: 3,
         explain: '此屬違法的報復行為，此類調動命令一律無效，並非雇主的合法權利。' },
@@ -2368,21 +2368,21 @@ const App = (function () {
         explain: '企業應把霸凌定義與處理流程明訂於工作規則並公告，建立多元申訴管道，並定期辦理主管教育訓練，而非等出事才臨時處理。' }
     ],
     harassment: [
-      { q: '關於「2026 年新法」對性騷擾事件發生的時間與空間認定，下列何者正確？',
+      { q: '依 2023 年修正之《性別平等工作法》，對性騷擾事件發生的時間與空間認定，下列何者正確？',
         opts: ['僅限於辦公室內發生的行為才算性騷擾', '若發生在「非工作時間」，人資可直接以「場外事件」為由拒絕受理', '保護範圍已延伸至「非工作時間」，只要是同一單位或業務往來對象的持續性騷擾皆適用', '下班後的私人聚會完全不屬於公司管轄範圍'], a: 2,
-        explain: '2026 年新法將保護範圍延伸至非工作時間，只要騷擾行為發生在同一單位成員或業務往來對象之間並具持續性，公司仍負有處置義務，不能以「場外」為由拒絕受理。' },
+        explain: '2023 年修正的《性別平等工作法》將保護範圍延伸至非工作時間，只要騷擾行為發生在同一單位成員或業務往來對象之間並具持續性，公司仍負有處置義務，不能以「場外」為由拒絕受理。' },
       { q: '若行為人利用「職務指揮、監督權力」進行騷擾，在法律上屬於何種定義？',
         opts: ['一般性騷擾', '權勢性騷擾', '職場霸凌', '私人糾紛'], a: 1,
         explain: '利用職務上指揮、監督關係進行騷擾，法律上定義為「權勢性騷擾」，與一般性騷擾在法律效果上有所區別（例如懲罰性賠償金）。' },
-      { q: '針對「權勢性騷擾」，法院最高可判賠多少倍的懲罰性賠償金？',
+      { q: '一般主管利用職務上的指揮監督權力進行性騷擾（行為人不是公司最高負責人），法院最高可判賠多少倍的懲罰性賠償金？',
         opts: ['1 倍', '2 倍', '3 倍', '5 倍'], a: 2,
-        explain: '對於具指揮監督關係者利用機會騷擾，法院可依法判賠 1 至 3 倍的懲罰性賠償金，上限為 3 倍。' },
+        explain: '主管利用權勢進行性騷擾，法院可依被害人請求判賠損害額 1 至 3 倍的懲罰性賠償金；若行為人是最高負責人，則提高為 3 至 5 倍。' },
       { q: '規模超過百人的公司，在組成「申訴調查小組」時，成員結構有何法定要求？',
         opts: ['必須全部由公司內部資深主管組成', '成員必須包含具備性別意識的「外部專業人士」', '只需要法務人員參與即可', '由受害者的直屬主管擔任負責人'], a: 1,
         explain: '調查小組需納入具備性別意識的外部專業人士，以確保程序客觀公正，避免因全由內部人員組成而產生偏頗疑慮。' },
-      { q: '根據新法，雇主對於性騷擾申訴人，至少應提供幾次心理諮商協助？',
-        opts: ['1 次', '2 次', '3 次', '5 次'], a: 1,
-        explain: '雇主對申訴人至少應提供 2 次心理諮商協助，作為法定防治與補救措施的一部分。' },
+      { q: '性騷擾申訴人在申訴期間感到壓力很大，雇主應如何協助？',
+        opts: ['請申訴人自行調適，這是私人問題', '提供或轉介心理諮商、法律協助等必要的協助', '要求申訴人先請假，等調查結束再回來上班', '等調查結果確定性騷擾成立，才需要提供協助'], a: 1,
+        explain: '雇主應主動提供或轉介心理諮商、法律協助等必要服務，不必等到調查結果出爐；也不能要求申訴人請假，以免變相不利對待。' },
       { q: '下列何者符合「知悉即啟動」的雙軌原則？',
         opts: ['必須等受害者遞交正式申訴書後，公司才能啟動程序', '只要雇主知悉疑似性騷擾情事，不論有無正式申訴書，都必須啟動處置程序', '僅針對傳聞進行非正式調查，無須記錄', '只要行為人否認，公司即可停止後續動作'], a: 1,
         explain: '「知悉即啟動」原則不論是否有正式申訴書，只要雇主知悉疑似情事，就必須啟動處置程序並留下紀錄，不能因行為人否認就停止調查。' },
@@ -2394,7 +2394,7 @@ const App = (function () {
         explain: '依勞動基準法規定，雇主行使不經預告解僱權，須自知悉其情形之日起 30 日內為之，逾期不得行使。' },
       { q: '若雇主知悉性騷擾卻未採取立即有效的補救措施，行政罰鍰上限最高為多少？',
         opts: ['50 萬元', '100 萬元', '150 萬元', '200 萬元'], a: 1,
-        explain: '依《性別工作平等法》規定，雇主知悉性騷擾情事而未採取立即有效之糾正及補救措施，最高可處 100 萬元罰鍰。' },
+        explain: '依《性別平等工作法》規定，雇主知悉性騷擾情事而未採取立即有效之糾正及補救措施，最高可處 100 萬元罰鍰。' },
       { q: '若雇主無法證明已盡防治責任，除了罰鍰，還可能面臨什麼民事後果？',
         opts: ['吊銷公司執照', '負責人入獄服刑', '與行為人連帶負擔民事損害賠償', '無須承擔額外責任'], a: 2,
         explain: '若雇主無法證明已盡到性騷擾防治義務，須與行為人一同對受害人連帶負擔民事損害賠償責任。' }
@@ -2426,16 +2426,16 @@ const App = (function () {
       { q: '企業要真正落實霸凌防治，下列做法何者最根本？',
         opts: ['出事後再臨時擬定處理流程', '準備好罰鍰預算，出事直接繳款了事', '將霸凌定義與處理流程明訂於工作規則、建立多元申訴管道並定期辦理教育訓練', '交由各部門主管自行決定是否處理'], a: 2 },
       // ---- 11-20：職場性騷擾防治 ----
-      { q: '主管與下屬在下班後的私人聚會中發生疑似性騷擾情事。根據 2026 年新法，公司應如何處理？',
+      { q: '主管與下屬在下班後的私人聚會中發生疑似性騷擾情事。依《性別平等工作法》，公司應如何處理？',
         opts: ['非工作時間發生，公司無管轄權', '只要是私人聚會就無須受理', '只要屬於同一單位或業務往來對象間的持續性騷擾，公司仍負處置義務', '只有在辦公室內發生才需要處理'], a: 2 },
       { q: '主管利用職務上的指揮監督權力對下屬進行性騷擾，法律上稱為：',
         opts: ['一般性騷擾', '權勢性騷擾', '職場霸凌', '一般糾紛'], a: 1 },
-      { q: '針對權勢性騷擾，法院最高可判賠幾倍的懲罰性賠償金？',
+      { q: '一般主管（非最高負責人）利用職務權力進行性騷擾，法院最高可判賠幾倍的懲罰性賠償金？',
         opts: ['1 倍', '2 倍', '3 倍', '5 倍'], a: 2 },
       { q: '規模超過百人的企業，性騷擾申訴調查小組的組成有何法定要求？',
         opts: ['全部由內部資深主管組成即可', '須包含具備性別意識的外部專業人士', '只需法務代表出席', '由受害者的直屬主管主導調查'], a: 1 },
-      { q: '依新法規定，雇主對性騷擾申訴人至少應提供幾次心理諮商協助？',
-        opts: ['1 次', '2 次', '3 次', '5 次'], a: 1 },
+      { q: '性騷擾申訴期間，雇主對申訴人應提供的協助，下列何者正確？',
+        opts: ['請申訴人自行調適', '提供或轉介心理諮商、法律協助等必要服務', '要求申訴人先請假，等調查結束再上班', '性騷擾成立後才需要提供協助'], a: 1 },
       { q: '「知悉即啟動」的雙軌原則是指：',
         opts: ['一定要有正式申訴書才能啟動程序', '不論有無正式申訴，雇主知悉即須啟動處置程序', '僅能進行非正式的口頭了解', '行為人否認時，公司即可終止調查'], a: 1 },
       { q: '調查期間，下列哪項做法屬於違法的報復行為？',
@@ -2458,7 +2458,7 @@ const App = (function () {
       { type: 'tf', q: '雇主知悉性騷擾情事卻未採取立即有效補救措施，最高可處 100 萬元行政罰鍰。',
         opts: ['是', '否'], a: 0 },
       // ---- 26-30：多選題（可多選，綜合霸凌＋性騷擾影片內容）----
-      { type: 'multi', q: '下列哪些屬於「職場霸凌五大構成要件」的內容？（可多選）',
+      { type: 'multi', q: '下列哪些屬於「職場霸凌」的構成要件？（可多選）',
         opts: ['發生於勞動場所', '利用職務權勢關係', '逾越業務合理範圍', '造成受害者身心健康損害', '一定要有肢體衝突才算'], a: [0,1,2,3] },
       { type: 'multi', q: '依新法規定，企業在處理職場霸凌或性騷擾申訴案件時，下列哪些做法是正確的？（可多選）',
         opts: ['只要「知悉」即須啟動處置程序', '調查過程應保密，避免二次傷害', '為求盡快結案，可強制雙方和解', '每一次警告與評估事由都要完整記錄', '為防止誤報，可先對申訴人進行不利處分'], a: [0,1,3] },
@@ -2489,7 +2489,7 @@ const App = (function () {
         opts: ['立即點擊', '先登入看看', '依資安 SOP 通報', '轉傳同事詢問'], a: 2 },
       { q: '下列何者屬於資安異常事件？',
         opts: ['正常登入系統', '發現異常大量登入通知', '修改桌布', '使用滑鼠'], a: 1 },
-      { q: '公司規範禁止使用中國來源 AI 模型，主要原因是：',
+      { q: '公司規範只能使用經過審核的 AI 工具，禁止使用來源不明或未經核准的外部 AI 服務，主要原因是：',
         opts: ['使用介面不好看', '法遵、資安與資料跨境風險', '電腦會變慢', 'AI 回答太長'], a: 1 },
       { q: '依職場法遵觀念，「知悉即啟動」是指：',
         opts: ['只有正式申訴才算', '知道風險後應立即採取行動', '先觀察幾週再說', '必須等主管同意'], a: 1 },
@@ -2536,8 +2536,40 @@ const App = (function () {
     ]
   };
 
+  // ===== 出題：每次作答都打亂「題目順序」和「選項順序」=====
+  // 每個人、每次重做看到的順序都不同，避免照抄答案，也讓正確答案平均分散在各個位置。
+  // 是非題的「是／否」不打亂；「以上皆是」這類選項固定放在最後。
+  const PAPERS = {};
+  const KEEP_LAST = /以上皆|皆是|皆非|皆可|以上都/;
+  function shuffleArr(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  function shuffleQuestion(q, srcIndex) {
+    const isTF = q.type === 'tf' || (q.opts.length === 2 && q.opts[0] === '是' && q.opts[1] === '否');
+    let order = q.opts.map((_, i) => i);
+    if (!isTF) {
+      const fixed = order.filter(i => KEEP_LAST.test(q.opts[i]));
+      order = shuffleArr(order.filter(i => !fixed.includes(i))).concat(fixed);
+    }
+    const map = i => order.indexOf(i);   // 原本的選項編號 → 新位置
+    return { ...q, opts: order.map(i => q.opts[i]), a: Array.isArray(q.a) ? q.a.map(map).sort((x, y) => x - y) : map(q.a), _src: srcIndex };
+  }
+  function newPaper(key, qs) {
+    PAPERS[key] = shuffleArr(qs.map((q, i) => shuffleQuestion(q, i)));
+    return PAPERS[key];
+  }
+  function getPaper(key, qs) { return PAPERS[key] || newPaper(key, qs); }
+  // 作答紀錄依「原本題號」排列，後台題目分析才能把同一題的資料放在一起
+  function toSourceOrder(paper, results) {
+    const out = [];
+    paper.forEach((q, i) => { out[q._src] = results[i]; });
+    return out;
+  }
+
   function renderQuiz(courseId) {
-    const qs = QUIZ_BANK[courseId] || [];
+    const qs = newPaper('unit:' + courseId, QUIZ_BANK[courseId] || []);
     return qs.map((q, qi) => `
       <div class="quiz-question">
         <div class="q-text">Q${qi+1}. ${q.q}</div>
@@ -2554,7 +2586,7 @@ const App = (function () {
   }
 
   function gradeQuiz(courseId) {
-    const qs = QUIZ_BANK[courseId] || [];
+    const qs = getPaper('unit:' + courseId, QUIZ_BANK[courseId] || []);
     let correct = 0;
     qs.forEach((q, qi) => {
       const picked = document.querySelector(`input[name="q${qi}"]:checked`);
@@ -2565,7 +2597,7 @@ const App = (function () {
 
   // ===== 總測驗：渲染與計分（支援單選／是非／多選）=====
   function renderFinalQuiz(role) {
-    const qs = FINAL_QUIZ_BANK[role] || [];
+    const qs = newPaper('final:' + role, FINAL_QUIZ_BANK[role] || []);
     const groups = [
       { key: 'tf',     label: '⭕ 是非題', items: [] },
       { key: 'single', label: '📝 選擇題', items: [] },
@@ -2601,8 +2633,8 @@ const App = (function () {
 
   // 總測驗每一題對或錯（數據分析用）
   function finalItemResults(role) {
-    const qs = FINAL_QUIZ_BANK[role] || [];
-    return qs.map((q, qi) => {
+    const qs = getPaper('final:' + role, FINAL_QUIZ_BANK[role] || []);
+    return toSourceOrder(qs, qs.map((q, qi) => {
       let ok;
       if (q.type === 'multi') {
         const picked = Array.from(document.querySelectorAll(`input[name="fq${qi}"]:checked`)).map(el => parseInt(el.value)).sort();
@@ -2613,11 +2645,11 @@ const App = (function () {
         ok = !!picked && parseInt(picked.value) === q.a;
       }
       return { q: q.q, ok };
-    });
+    }));
   }
 
   function gradeFinalQuiz(role) {
-    const qs = FINAL_QUIZ_BANK[role] || [];
+    const qs = getPaper('final:' + role, FINAL_QUIZ_BANK[role] || []);
     let correct = 0;
     qs.forEach((q, qi) => {
       if (q.type === 'multi') {
