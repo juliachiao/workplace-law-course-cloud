@@ -165,7 +165,8 @@ const Data = (function () {
     setProgress(empId, courseId, {
       videoSegments: merged,
       videoWatchedSeconds: watched,
-      videoLastPosition: Math.floor(end)
+      videoLastPosition: Math.floor(end),
+      videoMaxPosition: Math.max(p.videoMaxPosition || 0, Math.floor(end))
     });
   }
 
