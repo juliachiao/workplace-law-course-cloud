@@ -66,7 +66,14 @@ const App = (function () {
     target.requestSeek = (t) => {
       if (!player) return false;
       const safeTime = Math.min(Math.max(0, t), maxWatchedTime);
+      target.dispatchEvent(new Event('seeking'));   // 先讓紀錄邏輯把目前這段收尾
       safeSeek(safeTime);
+      lastPollTime = safeTime;
+      // 通知畫面與紀錄邏輯：位置已改變
+      setTimeout(() => {
+        target.dispatchEvent(new Event('seeked'));
+        target.dispatchEvent(new Event('timeupdate'));
+      }, 0);
       return safeTime >= t - 0.5; // 回報是否為「完整跳轉」(沒有被裁切)
     };
     target.isPlayingNow = () => isPlaying;
@@ -90,16 +97,17 @@ const App = (function () {
                 lastPollTime = player.getCurrentTime();
                 pollTimer = setInterval(() => {
                   const now = player.getCurrentTime();
-                  // 偵測非預期跳轉(理論上已被擋,這裡當作最後一道防線):強制彈回最遠已看位置
-                  if (now - lastPollTime > 1.8) {
+                  // 防快轉最後一道防線：只有跳到「還沒看過的位置」才彈回；倒回或在已看範圍內移動都允許
+                  if (now > maxWatchedTime + 1.8 && now - lastPollTime > 1.8) {
                     player.seekTo(maxWatchedTime, true);
                     target.dispatchEvent(new Event('seeked'));
                     lastPollTime = maxWatchedTime;
                     target.dispatchEvent(new Event('timeupdate'));
                     return;
                   }
+                  const continuous = now >= lastPollTime && now - lastPollTime <= 1.8;
                   lastPollTime = now;
-                  if (now > maxWatchedTime) maxWatchedTime = now;
+                  if (continuous && now > maxWatchedTime) maxWatchedTime = now;
                   target.dispatchEvent(new Event('timeupdate'));
                 }, 1000);
               }
@@ -153,11 +161,58 @@ const App = (function () {
     video.addEventListener('play', () => { btnPlay.textContent = '⏸'; });
     video.addEventListener('pause', () => { btnPlay.textContent = '▶'; });
     video.addEventListener('ended', () => { btnPlay.textContent = '↺'; });
-    video.addEventListener('timeupdate', () => {
+    const bar = wrap.querySelector('.ytc-bar');
+    const barMax = wrap.querySelector('.ytc-bar-max');
+    const knob = wrap.querySelector('.ytc-knob');
+    const btnBack = wrap.querySelector('.ytc-back');
+    let dragging = false, dragRatio = null, lastWarn = 0;
+    function paint(t) {
       const dur = video.duration || 0;
-      timeEl.textContent = `${formatSec(video.currentTime)} / ${formatSec(dur)}`;
-      if (barFill && dur) barFill.style.width = Math.min(100, (video.currentTime / dur) * 100) + '%';
+      timeEl.textContent = `${formatSec(t)} / ${formatSec(dur)}`;
+      if (!dur) return;
+      const cur = Math.min(100, (t / dur) * 100);
+      const mx = Math.min(100, ((video.getMaxWatchedTime ? video.getMaxWatchedTime() : t) / dur) * 100);
+      if (barFill) barFill.style.width = cur + '%';
+      if (barMax) barMax.style.width = Math.max(cur, mx) + '%';
+      if (knob) knob.style.left = cur + '%';
+    }
+    function ratioAt(e) {
+      const r = bar.getBoundingClientRect();
+      return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    }
+    function previewAt(ratio) {
+      const dur = video.duration || 0;
+      const mx = video.getMaxWatchedTime ? video.getMaxWatchedTime() : 0;
+      if (dur) paint(Math.min(ratio * dur, mx));
+    }
+    function seekToRatio(ratio) {
+      const dur = video.duration || 0;
+      if (!dur) return;
+      const full = video.requestSeek(ratio * dur);
+      if (!full && Date.now() - lastWarn > 2500) {
+        lastWarn = Date.now();
+        toast('尚未看過的片段無法快轉，已跳到您看到的最遠位置', 'error');
+      }
+    }
+    if (bar) {
+      bar.addEventListener('pointerdown', e => {
+        dragging = true;
+        try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+        dragRatio = ratioAt(e); previewAt(dragRatio);
+      });
+      bar.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        dragRatio = ratioAt(e); previewAt(dragRatio);
+      });
+      const end = () => { if (!dragging) return; dragging = false; if (dragRatio != null) seekToRatio(dragRatio); dragRatio = null; };
+      bar.addEventListener('pointerup', end);
+      bar.addEventListener('pointercancel', end);
+    }
+    if (btnBack) btnBack.addEventListener('click', () => {
+      video.requestSeek(Math.max(0, (video.currentTime || 0) - 10));
     });
+    video.addEventListener('timeupdate', () => { if (!dragging) paint(video.currentTime); });
+    video.addEventListener('loadedmetadata', () => paint(video.currentTime));
   }
 
   // ===== Toast =====
@@ -674,431 +729,856 @@ const App = (function () {
     }
   }
 
-  // =====================================================================
-  // ===== 重點整理（視覺化複習）=====
-  // 內容依據各單元課程說明、測驗題目與解析整理；修改內容只要改這個物件
-  // =====================================================================
-  const SUMMARY = {
-    pdpa: {
-      tagline: '該收的才收、該鎖的要鎖、該碎的要碎',
-      concepts: [
-        { icon: '🪪', title: '一般個資', desc: '姓名、電話、Email、地址，以及車牌、GPS 位置等能直接或拼湊出身分的資料' },
-        { icon: '🔐', title: '特種個資', desc: '病歷、醫療、基因、性生活、健康檢查、犯罪前科，受最高等級保護' },
-        { icon: '🎯', title: '特定目的', desc: '個資只能用在當初蒐集的目的，拿去做別的用途就是「逾越特定目的」' },
-        { icon: '⚖️', title: '法律紅線', desc: '個資外洩的民事賠償，同一事件合計最高可達 2 億元' },
-      ],
-      flowTitle: '個資管理四階段',
-      flow: [
-        { icon: '📥', label: '蒐集', desc: '合法蒐集，告知當事人用途、保存期限與接觸者' },
-        { icon: '🗂️', label: '處理', desc: '妥善保管，傳輸要加密' },
-        { icon: '📤', label: '利用', desc: '只在原本的特定目的內使用' },
-        { icon: '✂️', label: '銷毀', desc: '用碎紙機切成顆粒狀' },
-      ],
-      dos: ['離開座位時，個資文件鎖進抽屜或隨身帶走（桌面清空原則）', '寄送加密檔案，密碼改用電話或訊息另外告知（管道分離）', '密碼使用 12 位以上的強密碼', '發現個資異常，立即通報主管與個資窗口'],
-      donts: ['文件只是蓋起來、翻面就離開座位', '密碼和加密檔案寫在同一封信裡', '把客戶辦卡留的電話，拿去推銷其他商品', '因為害怕被罵，隱瞞個資外洩事件'],
-      sop: { title: '個資異常 SOP：疑、查、報', steps: ['疑：發現可疑的異常狀況', '查：立即查證是否真的外洩', '報：回報主管與個資窗口，不要隱瞞'] },
-      laws: [
-        { title: '《個人資料保護法》第 12 條', desc: '個資被竊取、洩漏或竄改時，要查明後以適當方式通知當事人' },
-        { title: '損害賠償上限', desc: '同一原因事實造成多數人受害，賠償合計最高 2 億元' },
-      ],
-      traps: ['碎成「長條狀」還是可能被拼湊還原，要碎成顆粒狀', '車牌、GPS 位置看似不重要，也屬於個資', '不必等到正式申訴，知悉疑似事件就要啟動處理'],
-    },
-    osh: {
-      tagline: '看見危險、避開危險、通報危險',
-      concepts: [
-        { icon: '🪜', title: '跌倒風險', desc: '站在椅子上拿高處物品，是辦公室最典型的職安風險' },
-        { icon: '💧', title: '滑倒風險', desc: '茶水間、走道地板濕滑，要立刻提醒並處理' },
-        { icon: '💺', title: '職業健康', desc: '長時間姿勢不良造成肩頸痠痛，也屬於職業安全衛生的範圍' },
-        { icon: '🧯', title: '火災應變', desc: '火勢過大時以自身安全為優先，先撤離再通報' },
-      ],
-      flowTitle: '職安三步驟：看、避、報',
-      flow: [
-        { icon: '👀', label: '看', desc: '留意身邊的危險源' },
-        { icon: '🚶', label: '避', desc: '避免危險行為，改用安全的替代方式' },
-        { icon: '📢', label: '報', desc: '立即通報相關人員，避免危害擴大' },
-      ],
-      dos: ['拿高處物品使用安全梯凳，或請同事協助', '發現地板濕滑，立即提醒周圍同事並通報', '依作業性質全程配戴耳罩、口罩等防護具', '正確使用公司提供的設備，遵守工作守則'],
-      donts: ['踩椅子、紙箱，或跳起來拿東西', '認為「沒有受傷就不算違規」', '覺得自己很資深，或沒人稽核就不戴防護具', '火勢已經很大，還硬要自己撲滅'],
-      laws: [
-        { title: '《職業安全衛生法》勞工義務', desc: '勞工應正確使用雇主提供的設備與防護措施，並遵守安全衛生工作守則' },
-      ],
-      traps: ['職安違規看的是「行為」，不是「有沒有受傷」', '長期姿勢不良的肌肉骨骼問題，也是職業健康議題'],
-    },
-    ai_policy: {
-      tagline: 'AI 是助手，不是替身：輸入前去識別、產出後要查證',
-      concepts: [
-        { icon: '🔓', title: '資料外洩', desc: '客戶個資、公司機密輸入外部 AI，可能被保存或外洩' },
-        { icon: '🌀', title: 'AI 幻覺', desc: 'AI 會產生看似正確、實際錯誤的內容' },
-        { icon: '©️', title: '著作權風險', desc: 'AI 生成內容可能涉及他人著作，註明「AI 生成」也不能免責' },
-        { icon: '✅', title: '核准工具清單', desc: '只使用公司核准的 AI 工具，確保資料安全與資安規範' },
-      ],
-      flowTitle: '安全使用 AI 的流程',
-      flow: [
-        { icon: '🧹', label: '去識別化', desc: '刪除姓名、電話等可識別個人的資料' },
-        { icon: '🛠️', label: '用核准工具', desc: '只在公司清單內的工具上操作' },
-        { icon: '🔍', label: '人工查證', desc: '確認 AI 產出的內容是否正確' },
-        { icon: '🏷️', label: '標註後使用', desc: '對外使用時依規範標註 AI 協助' },
-      ],
-      dos: ['分析客戶資料前，先刪除姓名、電話等可識別欄位', '使用公司核准清單內的 AI 工具', 'AI 產出的內容經過人工查證才使用', '對外文件依規範標註 AI 協助情形'],
-      donts: ['把含姓名、電話、交易紀錄的完整客戶資料直接貼給 AI', '把未公開的商業策略、合約、技術文件輸入公開 AI', '完全相信 AI 的答案，不做查證', '以為註明「AI 生成」就沒有著作權問題'],
-      laws: [
-        { title: '個資與機密保護', desc: '輸入 AI 的資料同樣受個資法與公司保密規範約束' },
-        { title: '智慧財產權', desc: 'AI 生成內容仍可能侵害他人著作權，使用前要確認來源與授權' },
-      ],
-      traps: ['「只要能提升效率」不是把個資輸入 AI 的理由', 'AI 不能完全取代人工判斷，最後的責任在使用的人'],
-    },
-    infosec: {
-      tagline: '資安不只是 IT 的事，每個「多確認一步」的人都是防線',
-      concepts: [
-        { icon: '🙈', title: '機密性 C', desc: '資料不能被未經授權的人看到' },
-        { icon: '🧩', title: '完整性 I', desc: '資料不能被竄改，例如帳號、金額被非法修改' },
-        { icon: '⚡', title: '可用性 A', desc: '需要使用時，系統和資料能正常取得' },
-        { icon: '🎣', title: '社交工程', desc: '駭客利用的是人性弱點，例如急迫感與貪婪，而不只是技術' },
-      ],
-      flowTitle: '資安事件三步驟：疑、查、報',
-      flow: [
-        { icon: '🤔', label: '疑', desc: '對可疑的信件、訊息保持警覺' },
-        { icon: '🔎', label: '查', desc: '確認來源是否合法，或直接詢問 IT，不要自己上網亂搜' },
-        { icon: '📮', label: '報', desc: '用公司內部的資安通報機制回報' },
-      ],
-      dos: ['先看寄件者：公司信應該是官方信箱，不是一般 Gmail', '收到「急件」「獎金」類訊息，先停一下再確認', '可疑郵件透過公司資安通報機制回報', '使用強密碼，不用 123456 或生日'],
-      donts: ['因為「不點就拿不到錢」就急著點連結', '插上來路不明的隨身碟', '相信假冒同事、主管傳來的訊息', '自己公開或回覆可疑的信件'],
-      threats: ['釣魚信件', '弱密碼（123456、生日）', '不明隨身碟', '假冒同事傳訊'],
-      laws: [
-        { title: '刑法：妨害電腦使用罪', desc: '病毒進入系統造成設備故障或資料損毀，可能涉及刑事責任' },
-        { title: '《個人資料保護法》', desc: '點了釣魚信導致客戶資料外洩，公司可能被主管機關開罰並負民事賠償' },
-      ],
-      traps: ['寄件者顯示名稱可以造假，要看實際的 email 網域', '資料外洩讓不該看的人看到，破壞的是「機密性」'],
-    },
-    bullying: {
-      tagline: '主管一「知悉」就要行動，守住「通、調、密、記」',
-      concepts: [
-        { icon: '💢', title: '霸凌的認定', desc: '依課程內容，造成身心危害的嚴重人格侮辱，即使只有一次也可能成立' },
-        { icon: '👂', title: '知悉即釐清', desc: '不必等書面申訴，主管只要知悉就有主動釐清的義務' },
-        { icon: '🛡️', title: '保護被害人', desc: '調查期間主管可以暫停被申訴人的職務，保護被害人' },
-        { icon: '🚫', title: '禁止報復', desc: '對申訴人或協助調查者的不利處分（例如調職）一律無效' },
-      ],
-      flowTitle: '主管處理原則：通、調、密、記',
-      flow: [
-        { icon: '📢', label: '通', desc: '知悉後依程序通報' },
-        { icon: '🔍', label: '調', desc: '啟動調查，釐清事實' },
-        { icon: '🤐', label: '密', desc: '全程保密，避免二次傷害' },
-        { icon: '📝', label: '記', desc: '每次警告、評估都留下書面紀錄' },
-      ],
-      dos: ['聽到傳聞就主動釐清，不等正式申訴', '調查期間採取保護被害人的措施', '每一次處理都留下完整的書面紀錄', '把霸凌定義和處理流程寫進工作規則並公告，定期辦理主管教育訓練'],
-      donts: ['找雙方「搓湯圓」，要求和解了事', '以「經營需要」為由，把申訴人調到偏遠單位', '讓被害人請無薪假來「隔離」', '認為員工離職，申訴就不了了之'],
-      laws: [
-        { title: '申訴時效', desc: '依課程內容，霸凌行為終了起 3 年內可申訴；在職期間發生者，離職後 1 年內仍可提出' },
-        { title: '《勞動事件法》舉證責任', desc: '雇主拿不出管理紀錄，法院可能直接認定勞工的主張為真實' },
-        { title: '強制和解的後果', desc: '強迫和解或程序有瑕疵，調查可能被認定無效並命令重查' },
-      ],
-      traps: ['「才罵一次」不代表不算霸凌', '平時沒有留紀錄，打官司時對公司非常不利'],
-    },
-    harassment: {
-      tagline: '知悉即啟動、保護當事人、程序要公正',
-      concepts: [
-        { icon: '👔', title: '權勢性騷擾', desc: '利用職務上指揮、監督的權力或機會進行騷擾，法院可判 1～3 倍懲罰性賠償金' },
-        { icon: '🌙', title: '非工作時間', desc: '同一單位或業務往來對象的持續性騷擾，即使在非工作時間也適用' },
-        { icon: '⚡', title: '知悉即啟動', desc: '不論有沒有正式申訴書，雇主知悉就要啟動處置並留下紀錄' },
-        { icon: '🧑‍⚖️', title: '外部專業人士', desc: '申訴調查小組要納入具性別意識的外部專業人士，確保公正' },
-      ],
-      flowTitle: '性騷擾事件處理流程',
-      flow: [
-        { icon: '👂', label: '知悉', desc: '一知道就要開始處理' },
-        { icon: '🛡️', label: '立即保護', desc: '隔離措施針對行為人' },
-        { icon: '📝', label: '受理申訴', desc: '依公司防治規定受理' },
-        { icon: '🔍', label: '公正調查', desc: '小組納入外部專業人士' },
-        { icon: '⚖️', label: '懲處追蹤', desc: '落實懲處並持續關心' },
-      ],
-      dos: ['調整行為人的座位、業務，或暫停其職務來隔離雙方', '提供申訴人心理諮商等協助', '即使行為人否認，也要完成調查程序', '情節重大要解僱時，在知悉起 30 日內行使'],
-      donts: ['等受害者遞交正式申訴書才處理', '以「發生在下班時間」為由拒絕受理', '把申訴人調職或減薪', '行為人一否認就停止調查'],
-      laws: [
-        { title: '雇主未立即處理', desc: '知悉性騷擾卻未採取立即有效的糾正及補救措施，最高可罰 100 萬元' },
-        { title: '連帶賠償責任', desc: '雇主無法證明已盡防治責任，要與行為人連帶負擔民事賠償' },
-        { title: '《勞動基準法》解僱時效', desc: '不經預告解僱，須自知悉之日起 30 日內行使' },
-      ],
-      traps: ['隔離措施要針對「行為人」，不是處罰申訴人', '權勢性騷擾和一般性騷擾的法律效果不同'],
-    },
-  };
-
-  // ===== 重點整理：列表頁 =====
-  function renderSummary() {
-    const user = Data.getCurrentUser();
-    const main = document.getElementById('main-content');
-    const myCourses = Data.COURSES[user.role] || [];
-    main.innerHTML = `
-      <div class="sum-wrap">
-        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-        <div class="page-header" style="text-align:center; margin: 10px 0 26px;">
-          <h1 class="page-title" style="font-size:32px; letter-spacing:6px;">重點整理</h1>
-          <div style="width:44px; height:3px; background:var(--primary); margin:14px auto;"></div>
-          <p style="color:var(--text-light);">一頁看懂每個單元的重點，複習、考前快速瀏覽都方便</p>
-        </div>
-        <div class="sum-list">
-          ${myCourses.map((c, i) => {
-            const col = BRANCH_COLORS[i % BRANCH_COLORS.length], sm = SUMMARY[c.id];
-            if (!sm) return '';
-            return `
-              <div class="sum-list-card" data-cid="${c.id}" style="--bc:${col.c}; --bbg:${col.bg}">
-                <div class="sum-list-icon">${c.icon}</div>
-                <div class="sum-list-body">
-                  <div class="sum-list-unit">Unit ${String(i + 1).padStart(2, '0')}</div>
-                  <div class="sum-list-title">${c.title}</div>
-                  <div class="sum-list-tag">${sm.tagline}</div>
-                  <div class="sum-list-chips">${sm.concepts.map(k => `<span>${k.icon} ${k.title}</span>`).join('')}</div>
-                </div>
-                <div class="sum-list-arrow">→</div>
-              </div>`;
-          }).join('')}
-        </div>
-      </div>`;
-    main.querySelectorAll('.sum-list-card').forEach(el => el.addEventListener('click', () => renderRoute('summary_unit', el.dataset.cid)));
-  }
-
-  // ===== 重點整理：單元頁 =====
-  function renderSummaryUnit(courseId) {
-    const user = Data.getCurrentUser();
-    const main = document.getElementById('main-content');
-    const myCourses = Data.COURSES[user.role] || [];
-    const idx = myCourses.findIndex(c => c.id === courseId);
-    const course = myCourses[idx], sm = SUMMARY[courseId];
-    if (!course || !sm) return renderSummary();   // 只看得到自己學習路徑的單元
-    const col = BRANCH_COLORS[idx % BRANCH_COLORS.length];
-    try { Data.addLog(user.empId, 'summary_view', `查看重點整理：${course.title}`); } catch (e) {}
-    const prev = myCourses[idx - 1], next = myCourses[idx + 1];
-    main.innerHTML = `
-      <div class="sum-wrap sum-unit" style="--bc:${col.c}; --bbg:${col.bg}">
-        <div class="sum-top no-print">
-          <a class="btn-back-menu" onclick="App.go('summary')">← 回重點整理</a>
-          <button class="btn btn-secondary sum-print" id="sum-print">🖨️ 列印／存成 PDF</button>
-        </div>
-
-        <div class="sum-hero">
-          <div class="sum-hero-icon">${course.icon}</div>
-          <div>
-            <div class="sum-hero-unit">Unit ${String(idx + 1).padStart(2, '0')}・重點整理</div>
-            <h1 class="sum-hero-title">${course.title}</h1>
-            <div class="sum-hero-tag">💡 ${sm.tagline}</div>
-          </div>
-        </div>
-
-        <h2 class="sum-h">📌 核心概念</h2>
-        <div class="sum-concepts">
-          ${sm.concepts.map(k => `<div class="sum-concept"><div class="sum-concept-icon">${k.icon}</div><div class="sum-concept-title">${k.title}</div><div class="sum-concept-desc">${k.desc}</div></div>`).join('')}
-        </div>
-
-        <h2 class="sum-h">🔄 ${sm.flowTitle}</h2>
-        <div class="sum-flow">
-          ${sm.flow.map((f, i) => `
-            <div class="sum-step"><div class="sum-step-no">${i + 1}</div><div class="sum-step-icon">${f.icon}</div><div class="sum-step-label">${f.label}</div><div class="sum-step-desc">${f.desc}</div></div>
-            ${i < sm.flow.length - 1 ? '<div class="sum-arrow">➜</div>' : ''}`).join('')}
-        </div>
-
-        <h2 class="sum-h">⚖️ 正確做法 vs 錯誤做法</h2>
-        <div class="sum-dd">
-          <div class="sum-do"><div class="sum-dd-head">✅ 這樣做</div>${sm.dos.map(t => `<div class="sum-dd-item">✓ ${t}</div>`).join('')}</div>
-          <div class="sum-dont"><div class="sum-dd-head">❌ 不要這樣做</div>${sm.donts.map(t => `<div class="sum-dd-item">✕ ${t}</div>`).join('')}</div>
-        </div>
-
-        ${sm.sop ? `<h2 class="sum-h">🧭 ${sm.sop.title}</h2><div class="sum-sop">${sm.sop.steps.map(t => `<div>${t}</div>`).join('')}</div>` : ''}
-        ${sm.threats ? `<h2 class="sum-h">⚠️ 常見資安威脅</h2><div class="sum-chips">${sm.threats.map(t => `<span>${t}</span>`).join('')}</div>` : ''}
-
-        <h2 class="sum-h">📜 相關法規與責任</h2>
-        <div class="sum-laws">
-          ${sm.laws.map(l => `<div class="sum-law"><div class="sum-law-title">${l.title}</div><div class="sum-law-desc">${l.desc}</div></div>`).join('')}
-        </div>
-
-        <div class="sum-traps">
-          <div class="sum-traps-head">🚨 容易搞錯的地方</div>
-          ${sm.traps.map(t => `<div class="sum-trap">• ${t}</div>`).join('')}
-        </div>
-
-        <div class="sum-actions no-print">
-          ${prev ? `<button class="btn btn-secondary" data-go="${prev.id}">← ${prev.title}</button>` : '<span></span>'}
-          <button class="btn btn-primary" id="sum-course">🎬 前往本單元課程</button>
-          ${next ? `<button class="btn btn-secondary" data-go="${next.id}">${next.title} →</button>` : '<span></span>'}
-        </div>
-      </div>`;
-    document.getElementById('sum-print').onclick = () => window.print();
-    document.getElementById('sum-course').onclick = () => renderRoute('cover', courseId, user.role);
-    main.querySelectorAll('[data-go]').forEach(b => b.onclick = () => renderRoute('summary_unit', b.dataset.go));
-  }
-
-  const SURVEY = Data.SURVEY, calcSUS = Data.calcSUS;
-  // ===== 滿意度問卷頁 =====
-  function renderSurvey() {
-    const user = Data.getCurrentUser();
-    const main = document.getElementById('main-content');
-    const finalProg = Data.getProgress(user.empId, 'final_' + user.role);
-    const done = Data.getSurvey(user.empId);
-    if (done) {
-      main.innerHTML = `<div class="svy-wrap"><a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-        <div class="svy-thanks"><div class="svy-thanks-icon">💌</div><h2>您已經填寫過滿意度問卷</h2>
-        <p>填寫時間：${formatTime(done.submittedAt)}<br>非常感謝您的回饋！</p></div></div>`;
-      return;
-    }
-    if (finalProg.quizScore == null) {
-      main.innerHTML = `<div class="svy-wrap"><a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-        <div class="svy-thanks"><div class="svy-thanks-icon">🔒</div><h2>完成總測驗後就能填寫</h2>
-        <p>請先完成所有單元與總測驗，再回來分享您的學習心得。</p></div></div>`;
-      return;
-    }
-    const playedGame = Data.getLogs(user.empId).some(l => l.type === 'game_opened');
-    const scale = SURVEY.likert;
-    const likertRow = (id, text, no) => `
-      <div class="svy-q" data-q="${id}">
-        <div class="svy-q-text"><span class="svy-no">${no}</span>${text}</div>
-        <div class="svy-scale">${scale.map((lab, k) => `
-          <label class="svy-opt"><input type="radio" name="${id}" value="${k + 1}"><span class="svy-dot">${k + 1}</span><span class="svy-lab">${lab}</span></label>`).join('')}
-        </div>
-      </div>`;
-    let no = 0;
-    const secHtml = SURVEY.sections.map(sec => `
-      <div class="svy-sec ${sec.game ? 'svy-game' : ''}">
-        <h3>${sec.title}</h3>
-        ${sec.game ? `<div class="svy-q svy-gate"><div class="svy-q-text">您是否玩過 3D 闖關遊戲？</div>
-          <div class="svy-yn"><label><input type="radio" name="playedGame" value="yes" ${playedGame ? 'checked' : ''}> 有玩過</label>
-          <label><input type="radio" name="playedGame" value="no"> 沒有玩過（跳過本部分）</label></div></div>` : ''}
-        <div class="svy-items">${sec.items.map(it => likertRow(it.id, it.t, ++no)).join('')}</div>
-      </div>`).join('');
-    const susHtml = SURVEY.sus.map((t, i) => likertRow('SUS' + (i + 1), t, i + 1)).join('');
-    const selfItems = SURVEY.self[user.role] || SURVEY.self.new_employee;
-    const selfHtml = selfItems.map((it, i) => likertRow(it.id, it.t, i + 1)).join('');
-    main.innerHTML = `
-      <div class="svy-wrap">
-        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-        <div class="svy-head">
-          <div class="svy-head-icon">📝</div>
-          <h1>學習滿意度問卷</h1>
-          <p>感謝您完成課程！請花約 5～8 分鐘填寫，您的回饋將用於改進課程與畢業專題研究，結果以匿名、整體統計方式呈現。</p>
-          <div class="svy-progress"><div class="svy-progress-bar"><div id="svy-bar"></div></div><span id="svy-count"></span></div>
-        </div>
-        <div class="svy-part"><div class="svy-part-title">第一部分　課程滿意度</div><div class="svy-part-desc">請依您的感受，選擇最符合的程度</div>${secHtml}</div>
-        <div class="svy-part"><div class="svy-part-title">第二部分　學習平台使用感受</div><div class="svy-part-desc">以下是關於整個學習平台（課程網站與 3D 遊戲）的使用感受，請憑第一印象作答</div><div class="svy-sec"><div class="svy-items">${susHtml}</div></div></div>
-        <div class="svy-part"><div class="svy-part-title">第三部分　學習成效自評</div><div class="svy-part-desc">完成課程後，您認為自己的程度如何？</div><div class="svy-sec"><div class="svy-items">${selfHtml}</div></div></div>
-        <div class="svy-part"><div class="svy-part-title">第四部分　意見回饋（選填）</div>
-          <div class="svy-sec">${SURVEY.open.map(o => `<label class="svy-open"><span>${o.t}</span><textarea id="${o.id}" rows="3" maxlength="500" placeholder="請輸入…"></textarea></label>`).join('')}</div></div>
-        <div class="svy-err" id="svy-err"></div>
-        <div class="svy-submit"><button class="btn btn-primary" id="svy-submit">送出問卷</button></div>
-      </div>`;
-    const gameSec = main.querySelector('.svy-game .svy-items');
-    function required() {
-      const ids = [];
-      SURVEY.sections.forEach(sec => { if (sec.game && main.querySelector('input[name=playedGame]:checked')?.value !== 'yes') return; sec.items.forEach(it => ids.push(it.id)); });
-      SURVEY.sus.forEach((_, i) => ids.push('SUS' + (i + 1)));
-      selfItems.forEach(it => ids.push(it.id));
-      return ids;
-    }
-    function refresh() {
-      const show = main.querySelector('input[name=playedGame]:checked')?.value === 'yes';
-      gameSec.style.display = show ? '' : 'none';
-      const req = required(), n = req.filter(id => main.querySelector(`input[name="${id}"]:checked`)).length;
-      document.getElementById('svy-bar').style.width = (n * 100 / req.length) + '%';
-      document.getElementById('svy-count').textContent = `已完成 ${n} / ${req.length} 題`;
-    }
-    main.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => { r.closest('.svy-q')?.classList.remove('svy-miss'); refresh(); }));
-    if (!main.querySelector('input[name=playedGame]:checked')) gameSec.style.display = 'none';
-    refresh();
-    document.getElementById('svy-submit').addEventListener('click', () => {
-      const req = required();
-      const missing = req.filter(id => !main.querySelector(`input[name="${id}"]:checked`));
-      main.querySelectorAll('.svy-miss').forEach(e => e.classList.remove('svy-miss'));
-      if (!main.querySelector('input[name=playedGame]:checked')) missing.unshift('playedGame');
-      if (missing.length) {
-        missing.forEach(id => { const q = id === 'playedGame' ? main.querySelector('.svy-gate') : main.querySelector(`.svy-q[data-q="${id}"]`); if (q) q.classList.add('svy-miss'); });
-        document.getElementById('svy-err').textContent = `還有 ${missing.length} 題尚未作答（已用紅框標示）`;
-        const first = main.querySelector('.svy-miss'); if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return;
-      }
-      const val = id => { const r = main.querySelector(`input[name="${id}"]:checked`); return r ? parseInt(r.value) : null; };
-      const answers = {};
-      req.forEach(id => { if (!id.startsWith('SUS')) answers[id] = val(id); });
-      const sus = SURVEY.sus.map((_, i) => val('SUS' + (i + 1)));
-      const open = {}; SURVEY.open.forEach(o => { open[o.id] = document.getElementById(o.id).value.trim(); });
-      Data.saveSurvey(user.empId, {
-        role: user.role, playedGame: main.querySelector('input[name=playedGame]:checked').value === 'yes',
-        answers, sus, susScore: calcSUS(sus), open, finalScore: finalProg.quizScore, submittedAt: new Date().toISOString()
-      });
-      Data.addLog(user.empId, 'survey_submitted', '填寫滿意度問卷');
-      main.innerHTML = `<div class="svy-wrap"><div class="svy-thanks"><div class="svy-thanks-icon">🎉</div><h2>感謝您的填寫！</h2>
-        <p>您的回饋對我們非常重要，將用於改進課程內容。</p><a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a></div></div>`;
-      window.scrollTo(0, 0); document.body.scrollTop = 0;
-    });
-  }
-
-  // =====================================================================
-  // ===== 求助資源 =====
-  // 公司內部窗口請依實際情況修改 RESOURCES.internal
-  // =====================================================================
-  const RESOURCES = {
-    internal: [
-      { icon: '🧑‍💼', title: '直屬主管', desc: '工作上遇到任何問題，可以先找直屬主管討論', note: '若主管本身就是事件當事人，請改找人資或申訴窗口' },
-      { icon: '🏢', title: '人力資源部', desc: '職場霸凌、性騷擾申訴，以及勞動權益相關問題', note: '請依公司公告的申訴管道提出' },
-      { icon: '🛡️', title: '個資窗口／資安窗口', desc: '個資外洩、可疑郵件、電腦中毒等資安事件', note: '發現異常請立即通報，不要自行處理或隱瞞' },
-      { icon: '🦺', title: '職業安全衛生人員', desc: '工作環境的安全隱憂、職業災害通報', note: '' },
-    ],
-    situations: [
-      { icon: '🔒', title: '發現個資可能外洩', tag: '個資', steps: ['立即通報主管與個資窗口', '保留相關紀錄，不要自行刪除', '配合公司查明，並依規定通知當事人'] },
-      { icon: '⚠️', title: '發生職災或看到危險', tag: '職安', steps: ['先確保自身與同事安全', '通報主管與職安人員', '對處理結果有疑慮，可撥 1955 諮詢'] },
-      { icon: '🎣', title: '收到可疑郵件、訊息', tag: '資安', steps: ['不點連結、不開附件、不回覆', '向 IT 或資安窗口通報', '已經被騙或匯款，立即撥 165'] },
-      { icon: '😣', title: '遭受職場霸凌', tag: '霸凌', steps: ['記錄日期、經過、證據與目擊者', '向公司申訴管道提出申訴', '公司未妥善處理，可撥 1955 尋求協助'] },
-      { icon: '🚫', title: '遭受性騷擾', tag: '性騷擾', steps: ['保留對話、訊息等證據', '向公司性騷擾申訴管道提出', '可向地方政府勞工主管機關申訴，或撥 113'] },
-      { icon: '💙', title: '心情低落、壓力很大', tag: '身心', steps: ['找信任的人聊聊', '使用公司的員工協助方案（如有）', '24 小時都可以撥 1925 安心專線'] },
-    ],
-    hotlines: [
-      { num: '1955', title: '勞工諮詢申訴專線', desc: '勞動部｜勞動權益、職場霸凌、性騷擾等勞動問題，24 小時、免付費' },
-      { num: '113', title: '保護專線', desc: '衛生福利部｜性騷擾、性侵害、家庭暴力等，24 小時' },
-      { num: '165', title: '反詐騙諮詢專線', desc: '內政部警政署｜詐騙、可疑訊息查證' },
-      { num: '1925', title: '安心專線', desc: '衛生福利部｜心理諮詢，24 小時、免付費' },
-    ],
-    laws: [
-      { title: '個人資料保護法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=I0050021', unit: '個資管理' },
-      { title: '職業安全衛生法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=N0060001', unit: '職業安全衛生、職場霸凌' },
-      { title: '性別平等工作法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=N0030014', unit: '職場性騷擾防治' },
-      { title: '勞動基準法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=N0030001', unit: '勞動權益' },
-      { title: '資通安全管理法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=A0030297', unit: '資訊安全' },
-    ],
-  };
-  function renderResources() {
-    const user = Data.getCurrentUser();
-    try { Data.addLog(user.empId, 'resources_view', '查看求助資源'); } catch (e) {}
-    const main = document.getElementById('main-content');
-    main.innerHTML = `
-      <div class="res-wrap">
-        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-        <div class="page-header" style="text-align:center; margin: 10px 0 22px;">
-          <h1 class="page-title" style="font-size:32px; letter-spacing:6px;">求助資源</h1>
-          <div style="width:44px; height:3px; background:var(--primary); margin:14px auto;"></div>
-          <p style="color:var(--text-light);">遇到職場問題時，你不是一個人。以下是可以尋求協助的管道</p>
-        </div>
-        <div class="res-safe">🤝 <b>申訴與通報都受到保護：</b>公司應對申訴內容保密，也不可以因為你提出申訴或協助調查，而對你做出不利的處分。</div>
-
-        <h2 class="sum-h">🧭 遇到狀況，這樣做</h2>
-        <div class="res-situations">
-          ${RESOURCES.situations.map(s => `
-            <div class="res-sit"><div class="res-sit-head"><span class="res-sit-icon">${s.icon}</span><div><div class="res-sit-tag">${s.tag}</div><div class="res-sit-title">${s.title}</div></div></div>
-              <ol>${s.steps.map(t => `<li>${t}</li>`).join('')}</ol></div>`).join('')}
-        </div>
-
-        <h2 class="sum-h">🏢 公司內部窗口</h2>
-        <div class="res-internal">
-          ${RESOURCES.internal.map(r => `<div class="res-int"><div class="res-int-icon">${r.icon}</div><div><div class="res-int-title">${r.title}</div><div class="res-int-desc">${r.desc}</div>${r.note ? `<div class="res-int-note">${r.note}</div>` : ''}</div></div>`).join('')}
-        </div>
-
-        <h2 class="sum-h">📞 外部諮詢專線</h2>
-        <div class="res-hotlines">
-          ${RESOURCES.hotlines.map(h => `<a class="res-hot" href="tel:${h.num}"><div class="res-hot-num">${h.num}</div><div><div class="res-hot-title">${h.title}</div><div class="res-hot-desc">${h.desc}</div></div></a>`).join('')}
-        </div>
-        <p class="res-hint">📱 用手機瀏覽時，點專線號碼就能直接撥打。</p>
-
-        <h2 class="sum-h">📜 相關法規（全國法規資料庫）</h2>
-        <div class="res-laws">
-          ${RESOURCES.laws.map(l => `<a class="res-law" href="${l.url}" target="_blank" rel="noopener"><span>📖 ${l.title}</span><small>${l.unit}</small><b>↗</b></a>`).join('')}
-        </div>
-        <p class="res-hint">本頁資訊僅供參考，實際權益與程序請以法規及主管機關公告為準。</p>
-      </div>`;
-  }
-
+  // =====================================================================
+
+  // ===== 重點整理（視覺化複習）=====
+
+  // 內容依據各單元課程說明、測驗題目與解析整理；修改內容只要改這個物件
+
+  // =====================================================================
+
+  const SUMMARY = {
+
+    pdpa: {
+
+      tagline: '該收的才收、該鎖的要鎖、該碎的要碎',
+
+      concepts: [
+
+        { icon: '🪪', title: '一般個資', desc: '姓名、電話、Email、地址，以及車牌、GPS 位置等能直接或拼湊出身分的資料' },
+
+        { icon: '🔐', title: '特種個資', desc: '病歷、醫療、基因、性生活、健康檢查、犯罪前科，受最高等級保護' },
+
+        { icon: '🎯', title: '特定目的', desc: '個資只能用在當初蒐集的目的，拿去做別的用途就是「逾越特定目的」' },
+
+        { icon: '⚖️', title: '法律紅線', desc: '個資外洩的民事賠償，同一事件合計最高可達 2 億元' },
+
+      ],
+
+      flowTitle: '個資管理四階段',
+
+      flow: [
+
+        { icon: '📥', label: '蒐集', desc: '合法蒐集，告知當事人用途、保存期限與接觸者' },
+
+        { icon: '🗂️', label: '處理', desc: '妥善保管，傳輸要加密' },
+
+        { icon: '📤', label: '利用', desc: '只在原本的特定目的內使用' },
+
+        { icon: '✂️', label: '銷毀', desc: '用碎紙機切成顆粒狀' },
+
+      ],
+
+      dos: ['離開座位時，個資文件鎖進抽屜或隨身帶走（桌面清空原則）', '寄送加密檔案，密碼改用電話或訊息另外告知（管道分離）', '密碼使用 12 位以上的強密碼', '發現個資異常，立即通報主管與個資窗口'],
+
+      donts: ['文件只是蓋起來、翻面就離開座位', '密碼和加密檔案寫在同一封信裡', '把客戶辦卡留的電話，拿去推銷其他商品', '因為害怕被罵，隱瞞個資外洩事件'],
+
+      sop: { title: '個資異常 SOP：疑、查、報', steps: ['疑：發現可疑的異常狀況', '查：立即查證是否真的外洩', '報：回報主管與個資窗口，不要隱瞞'] },
+
+      laws: [
+
+        { title: '《個人資料保護法》第 12 條', desc: '個資被竊取、洩漏或竄改時，要查明後以適當方式通知當事人' },
+
+        { title: '損害賠償上限', desc: '同一原因事實造成多數人受害，賠償合計最高 2 億元' },
+
+      ],
+
+      traps: ['碎成「長條狀」還是可能被拼湊還原，要碎成顆粒狀', '車牌、GPS 位置看似不重要，也屬於個資', '不必等到正式申訴，知悉疑似事件就要啟動處理'],
+
+    },
+
+    osh: {
+
+      tagline: '看見危險、避開危險、通報危險',
+
+      concepts: [
+
+        { icon: '🪜', title: '跌倒風險', desc: '站在椅子上拿高處物品，是辦公室最典型的職安風險' },
+
+        { icon: '💧', title: '滑倒風險', desc: '茶水間、走道地板濕滑，要立刻提醒並處理' },
+
+        { icon: '💺', title: '職業健康', desc: '長時間姿勢不良造成肩頸痠痛，也屬於職業安全衛生的範圍' },
+
+        { icon: '🧯', title: '火災應變', desc: '火勢過大時以自身安全為優先，先撤離再通報' },
+
+      ],
+
+      flowTitle: '職安三步驟：看、避、報',
+
+      flow: [
+
+        { icon: '👀', label: '看', desc: '留意身邊的危險源' },
+
+        { icon: '🚶', label: '避', desc: '避免危險行為，改用安全的替代方式' },
+
+        { icon: '📢', label: '報', desc: '立即通報相關人員，避免危害擴大' },
+
+      ],
+
+      dos: ['拿高處物品使用安全梯凳，或請同事協助', '發現地板濕滑，立即提醒周圍同事並通報', '依作業性質全程配戴耳罩、口罩等防護具', '正確使用公司提供的設備，遵守工作守則'],
+
+      donts: ['踩椅子、紙箱，或跳起來拿東西', '認為「沒有受傷就不算違規」', '覺得自己很資深，或沒人稽核就不戴防護具', '火勢已經很大，還硬要自己撲滅'],
+
+      laws: [
+
+        { title: '《職業安全衛生法》勞工義務', desc: '勞工應正確使用雇主提供的設備與防護措施，並遵守安全衛生工作守則' },
+
+      ],
+
+      traps: ['職安違規看的是「行為」，不是「有沒有受傷」', '長期姿勢不良的肌肉骨骼問題，也是職業健康議題'],
+
+    },
+
+    ai_policy: {
+
+      tagline: 'AI 是助手，不是替身：輸入前去識別、產出後要查證',
+
+      concepts: [
+
+        { icon: '🔓', title: '資料外洩', desc: '客戶個資、公司機密輸入外部 AI，可能被保存或外洩' },
+
+        { icon: '🌀', title: 'AI 幻覺', desc: 'AI 會產生看似正確、實際錯誤的內容' },
+
+        { icon: '©️', title: '著作權風險', desc: 'AI 生成內容可能涉及他人著作，註明「AI 生成」也不能免責' },
+
+        { icon: '✅', title: '核准工具清單', desc: '只使用公司核准的 AI 工具，確保資料安全與資安規範' },
+
+      ],
+
+      flowTitle: '安全使用 AI 的流程',
+
+      flow: [
+
+        { icon: '🧹', label: '去識別化', desc: '刪除姓名、電話等可識別個人的資料' },
+
+        { icon: '🛠️', label: '用核准工具', desc: '只在公司清單內的工具上操作' },
+
+        { icon: '🔍', label: '人工查證', desc: '確認 AI 產出的內容是否正確' },
+
+        { icon: '🏷️', label: '標註後使用', desc: '對外使用時依規範標註 AI 協助' },
+
+      ],
+
+      dos: ['分析客戶資料前，先刪除姓名、電話等可識別欄位', '使用公司核准清單內的 AI 工具', 'AI 產出的內容經過人工查證才使用', '對外文件依規範標註 AI 協助情形'],
+
+      donts: ['把含姓名、電話、交易紀錄的完整客戶資料直接貼給 AI', '把未公開的商業策略、合約、技術文件輸入公開 AI', '完全相信 AI 的答案，不做查證', '以為註明「AI 生成」就沒有著作權問題'],
+
+      laws: [
+
+        { title: '個資與機密保護', desc: '輸入 AI 的資料同樣受個資法與公司保密規範約束' },
+
+        { title: '智慧財產權', desc: 'AI 生成內容仍可能侵害他人著作權，使用前要確認來源與授權' },
+
+      ],
+
+      traps: ['「只要能提升效率」不是把個資輸入 AI 的理由', 'AI 不能完全取代人工判斷，最後的責任在使用的人'],
+
+    },
+
+    infosec: {
+
+      tagline: '資安不只是 IT 的事，每個「多確認一步」的人都是防線',
+
+      concepts: [
+
+        { icon: '🙈', title: '機密性 C', desc: '資料不能被未經授權的人看到' },
+
+        { icon: '🧩', title: '完整性 I', desc: '資料不能被竄改，例如帳號、金額被非法修改' },
+
+        { icon: '⚡', title: '可用性 A', desc: '需要使用時，系統和資料能正常取得' },
+
+        { icon: '🎣', title: '社交工程', desc: '駭客利用的是人性弱點，例如急迫感與貪婪，而不只是技術' },
+
+      ],
+
+      flowTitle: '資安事件三步驟：疑、查、報',
+
+      flow: [
+
+        { icon: '🤔', label: '疑', desc: '對可疑的信件、訊息保持警覺' },
+
+        { icon: '🔎', label: '查', desc: '確認來源是否合法，或直接詢問 IT，不要自己上網亂搜' },
+
+        { icon: '📮', label: '報', desc: '用公司內部的資安通報機制回報' },
+
+      ],
+
+      dos: ['先看寄件者：公司信應該是官方信箱，不是一般 Gmail', '收到「急件」「獎金」類訊息，先停一下再確認', '可疑郵件透過公司資安通報機制回報', '使用強密碼，不用 123456 或生日'],
+
+      donts: ['因為「不點就拿不到錢」就急著點連結', '插上來路不明的隨身碟', '相信假冒同事、主管傳來的訊息', '自己公開或回覆可疑的信件'],
+
+      threats: ['釣魚信件', '弱密碼（123456、生日）', '不明隨身碟', '假冒同事傳訊'],
+
+      laws: [
+
+        { title: '刑法：妨害電腦使用罪', desc: '病毒進入系統造成設備故障或資料損毀，可能涉及刑事責任' },
+
+        { title: '《個人資料保護法》', desc: '點了釣魚信導致客戶資料外洩，公司可能被主管機關開罰並負民事賠償' },
+
+      ],
+
+      traps: ['寄件者顯示名稱可以造假，要看實際的 email 網域', '資料外洩讓不該看的人看到，破壞的是「機密性」'],
+
+    },
+
+    bullying: {
+
+      tagline: '主管一「知悉」就要行動，守住「通、調、密、記」',
+
+      concepts: [
+
+        { icon: '💢', title: '霸凌的認定', desc: '依課程內容，造成身心危害的嚴重人格侮辱，即使只有一次也可能成立' },
+
+        { icon: '👂', title: '知悉即釐清', desc: '不必等書面申訴，主管只要知悉就有主動釐清的義務' },
+
+        { icon: '🛡️', title: '保護被害人', desc: '調查期間主管可以暫停被申訴人的職務，保護被害人' },
+
+        { icon: '🚫', title: '禁止報復', desc: '對申訴人或協助調查者的不利處分（例如調職）一律無效' },
+
+      ],
+
+      flowTitle: '主管處理原則：通、調、密、記',
+
+      flow: [
+
+        { icon: '📢', label: '通', desc: '知悉後依程序通報' },
+
+        { icon: '🔍', label: '調', desc: '啟動調查，釐清事實' },
+
+        { icon: '🤐', label: '密', desc: '全程保密，避免二次傷害' },
+
+        { icon: '📝', label: '記', desc: '每次警告、評估都留下書面紀錄' },
+
+      ],
+
+      dos: ['聽到傳聞就主動釐清，不等正式申訴', '調查期間採取保護被害人的措施', '每一次處理都留下完整的書面紀錄', '把霸凌定義和處理流程寫進工作規則並公告，定期辦理主管教育訓練'],
+
+      donts: ['找雙方「搓湯圓」，要求和解了事', '以「經營需要」為由，把申訴人調到偏遠單位', '讓被害人請無薪假來「隔離」', '認為員工離職，申訴就不了了之'],
+
+      laws: [
+
+        { title: '申訴時效', desc: '依課程內容，霸凌行為終了起 3 年內可申訴；在職期間發生者，離職後 1 年內仍可提出' },
+
+        { title: '《勞動事件法》舉證責任', desc: '雇主拿不出管理紀錄，法院可能直接認定勞工的主張為真實' },
+
+        { title: '強制和解的後果', desc: '強迫和解或程序有瑕疵，調查可能被認定無效並命令重查' },
+
+      ],
+
+      traps: ['「才罵一次」不代表不算霸凌', '平時沒有留紀錄，打官司時對公司非常不利'],
+
+    },
+
+    harassment: {
+
+      tagline: '知悉即啟動、保護當事人、程序要公正',
+
+      concepts: [
+
+        { icon: '👔', title: '權勢性騷擾', desc: '利用職務上指揮、監督的權力或機會進行騷擾，法院可判 1～3 倍懲罰性賠償金' },
+
+        { icon: '🌙', title: '非工作時間', desc: '同一單位或業務往來對象的持續性騷擾，即使在非工作時間也適用' },
+
+        { icon: '⚡', title: '知悉即啟動', desc: '不論有沒有正式申訴書，雇主知悉就要啟動處置並留下紀錄' },
+
+        { icon: '🧑‍⚖️', title: '外部專業人士', desc: '申訴調查小組要納入具性別意識的外部專業人士，確保公正' },
+
+      ],
+
+      flowTitle: '性騷擾事件處理流程',
+
+      flow: [
+
+        { icon: '👂', label: '知悉', desc: '一知道就要開始處理' },
+
+        { icon: '🛡️', label: '立即保護', desc: '隔離措施針對行為人' },
+
+        { icon: '📝', label: '受理申訴', desc: '依公司防治規定受理' },
+
+        { icon: '🔍', label: '公正調查', desc: '小組納入外部專業人士' },
+
+        { icon: '⚖️', label: '懲處追蹤', desc: '落實懲處並持續關心' },
+
+      ],
+
+      dos: ['調整行為人的座位、業務，或暫停其職務來隔離雙方', '提供申訴人心理諮商等協助', '即使行為人否認，也要完成調查程序', '情節重大要解僱時，在知悉起 30 日內行使'],
+
+      donts: ['等受害者遞交正式申訴書才處理', '以「發生在下班時間」為由拒絕受理', '把申訴人調職或減薪', '行為人一否認就停止調查'],
+
+      laws: [
+
+        { title: '雇主未立即處理', desc: '知悉性騷擾卻未採取立即有效的糾正及補救措施，最高可罰 100 萬元' },
+
+        { title: '連帶賠償責任', desc: '雇主無法證明已盡防治責任，要與行為人連帶負擔民事賠償' },
+
+        { title: '《勞動基準法》解僱時效', desc: '不經預告解僱，須自知悉之日起 30 日內行使' },
+
+      ],
+
+      traps: ['隔離措施要針對「行為人」，不是處罰申訴人', '權勢性騷擾和一般性騷擾的法律效果不同'],
+
+    },
+
+  };
+
+
+
+  // ===== 重點整理：列表頁 =====
+
+  function renderSummary() {
+
+    const user = Data.getCurrentUser();
+
+    const main = document.getElementById('main-content');
+
+    const myCourses = Data.COURSES[user.role] || [];
+
+    main.innerHTML = `
+
+      <div class="sum-wrap">
+
+        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
+
+        <div class="page-header" style="text-align:center; margin: 10px 0 26px;">
+
+          <h1 class="page-title" style="font-size:32px; letter-spacing:6px;">重點整理</h1>
+
+          <div style="width:44px; height:3px; background:var(--primary); margin:14px auto;"></div>
+
+          <p style="color:var(--text-light);">一頁看懂每個單元的重點，複習、考前快速瀏覽都方便</p>
+
+        </div>
+
+        <div class="sum-list">
+
+          ${myCourses.map((c, i) => {
+
+            const col = BRANCH_COLORS[i % BRANCH_COLORS.length], sm = SUMMARY[c.id];
+
+            if (!sm) return '';
+
+            return `
+
+              <div class="sum-list-card" data-cid="${c.id}" style="--bc:${col.c}; --bbg:${col.bg}">
+
+                <div class="sum-list-icon">${c.icon}</div>
+
+                <div class="sum-list-body">
+
+                  <div class="sum-list-unit">Unit ${String(i + 1).padStart(2, '0')}</div>
+
+                  <div class="sum-list-title">${c.title}</div>
+
+                  <div class="sum-list-tag">${sm.tagline}</div>
+
+                  <div class="sum-list-chips">${sm.concepts.map(k => `<span>${k.icon} ${k.title}</span>`).join('')}</div>
+
+                </div>
+
+                <div class="sum-list-arrow">→</div>
+
+              </div>`;
+
+          }).join('')}
+
+        </div>
+
+      </div>`;
+
+    main.querySelectorAll('.sum-list-card').forEach(el => el.addEventListener('click', () => renderRoute('summary_unit', el.dataset.cid)));
+
+  }
+
+
+
+  // ===== 重點整理：單元頁 =====
+
+  function renderSummaryUnit(courseId) {
+
+    const user = Data.getCurrentUser();
+
+    const main = document.getElementById('main-content');
+
+    const myCourses = Data.COURSES[user.role] || [];
+
+    const idx = myCourses.findIndex(c => c.id === courseId);
+
+    const course = myCourses[idx], sm = SUMMARY[courseId];
+
+    if (!course || !sm) return renderSummary();   // 只看得到自己學習路徑的單元
+
+    const col = BRANCH_COLORS[idx % BRANCH_COLORS.length];
+
+    try { Data.addLog(user.empId, 'summary_view', `查看重點整理：${course.title}`); } catch (e) {}
+
+    const prev = myCourses[idx - 1], next = myCourses[idx + 1];
+
+    main.innerHTML = `
+
+      <div class="sum-wrap sum-unit" style="--bc:${col.c}; --bbg:${col.bg}">
+
+        <div class="sum-top no-print">
+
+          <a class="btn-back-menu" onclick="App.go('summary')">← 回重點整理</a>
+
+          <button class="btn btn-secondary sum-print" id="sum-print">🖨️ 列印／存成 PDF</button>
+
+        </div>
+
+
+
+        <div class="sum-hero">
+
+          <div class="sum-hero-icon">${course.icon}</div>
+
+          <div>
+
+            <div class="sum-hero-unit">Unit ${String(idx + 1).padStart(2, '0')}・重點整理</div>
+
+            <h1 class="sum-hero-title">${course.title}</h1>
+
+            <div class="sum-hero-tag">💡 ${sm.tagline}</div>
+
+          </div>
+
+        </div>
+
+
+
+        <h2 class="sum-h">📌 核心概念</h2>
+
+        <div class="sum-concepts">
+
+          ${sm.concepts.map(k => `<div class="sum-concept"><div class="sum-concept-icon">${k.icon}</div><div class="sum-concept-title">${k.title}</div><div class="sum-concept-desc">${k.desc}</div></div>`).join('')}
+
+        </div>
+
+
+
+        <h2 class="sum-h">🔄 ${sm.flowTitle}</h2>
+
+        <div class="sum-flow">
+
+          ${sm.flow.map((f, i) => `
+
+            <div class="sum-step"><div class="sum-step-no">${i + 1}</div><div class="sum-step-icon">${f.icon}</div><div class="sum-step-label">${f.label}</div><div class="sum-step-desc">${f.desc}</div></div>
+
+            ${i < sm.flow.length - 1 ? '<div class="sum-arrow">➜</div>' : ''}`).join('')}
+
+        </div>
+
+
+
+        <h2 class="sum-h">⚖️ 正確做法 vs 錯誤做法</h2>
+
+        <div class="sum-dd">
+
+          <div class="sum-do"><div class="sum-dd-head">✅ 這樣做</div>${sm.dos.map(t => `<div class="sum-dd-item">✓ ${t}</div>`).join('')}</div>
+
+          <div class="sum-dont"><div class="sum-dd-head">❌ 不要這樣做</div>${sm.donts.map(t => `<div class="sum-dd-item">✕ ${t}</div>`).join('')}</div>
+
+        </div>
+
+
+
+        ${sm.sop ? `<h2 class="sum-h">🧭 ${sm.sop.title}</h2><div class="sum-sop">${sm.sop.steps.map(t => `<div>${t}</div>`).join('')}</div>` : ''}
+
+        ${sm.threats ? `<h2 class="sum-h">⚠️ 常見資安威脅</h2><div class="sum-chips">${sm.threats.map(t => `<span>${t}</span>`).join('')}</div>` : ''}
+
+
+
+        <h2 class="sum-h">📜 相關法規與責任</h2>
+
+        <div class="sum-laws">
+
+          ${sm.laws.map(l => `<div class="sum-law"><div class="sum-law-title">${l.title}</div><div class="sum-law-desc">${l.desc}</div></div>`).join('')}
+
+        </div>
+
+
+
+        <div class="sum-traps">
+
+          <div class="sum-traps-head">🚨 容易搞錯的地方</div>
+
+          ${sm.traps.map(t => `<div class="sum-trap">• ${t}</div>`).join('')}
+
+        </div>
+
+
+
+        <div class="sum-actions no-print">
+
+          ${prev ? `<button class="btn btn-secondary" data-go="${prev.id}">← ${prev.title}</button>` : '<span></span>'}
+
+          <button class="btn btn-primary" id="sum-course">🎬 前往本單元課程</button>
+
+          ${next ? `<button class="btn btn-secondary" data-go="${next.id}">${next.title} →</button>` : '<span></span>'}
+
+        </div>
+
+      </div>`;
+
+    document.getElementById('sum-print').onclick = () => window.print();
+
+    document.getElementById('sum-course').onclick = () => renderRoute('cover', courseId, user.role);
+
+    main.querySelectorAll('[data-go]').forEach(b => b.onclick = () => renderRoute('summary_unit', b.dataset.go));
+
+  }
+
+
+
+  const SURVEY = Data.SURVEY, calcSUS = Data.calcSUS;
+
+  // ===== 滿意度問卷頁 =====
+
+  function renderSurvey() {
+
+    const user = Data.getCurrentUser();
+
+    const main = document.getElementById('main-content');
+
+    const finalProg = Data.getProgress(user.empId, 'final_' + user.role);
+
+    const done = Data.getSurvey(user.empId);
+
+    if (done) {
+
+      main.innerHTML = `<div class="svy-wrap"><a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
+
+        <div class="svy-thanks"><div class="svy-thanks-icon">💌</div><h2>您已經填寫過滿意度問卷</h2>
+
+        <p>填寫時間：${formatTime(done.submittedAt)}<br>非常感謝您的回饋！</p></div></div>`;
+
+      return;
+
+    }
+
+    if (finalProg.quizScore == null) {
+
+      main.innerHTML = `<div class="svy-wrap"><a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
+
+        <div class="svy-thanks"><div class="svy-thanks-icon">🔒</div><h2>完成總測驗後就能填寫</h2>
+
+        <p>請先完成所有單元與總測驗，再回來分享您的學習心得。</p></div></div>`;
+
+      return;
+
+    }
+
+    const playedGame = Data.getLogs(user.empId).some(l => l.type === 'game_opened');
+
+    const scale = SURVEY.likert;
+
+    const likertRow = (id, text, no) => `
+
+      <div class="svy-q" data-q="${id}">
+
+        <div class="svy-q-text"><span class="svy-no">${no}</span>${text}</div>
+
+        <div class="svy-scale">${scale.map((lab, k) => `
+
+          <label class="svy-opt"><input type="radio" name="${id}" value="${k + 1}"><span class="svy-dot">${k + 1}</span><span class="svy-lab">${lab}</span></label>`).join('')}
+
+        </div>
+
+      </div>`;
+
+    let no = 0;
+
+    const secHtml = SURVEY.sections.map(sec => `
+
+      <div class="svy-sec ${sec.game ? 'svy-game' : ''}">
+
+        <h3>${sec.title}</h3>
+
+        ${sec.game ? `<div class="svy-q svy-gate"><div class="svy-q-text">您是否玩過 3D 闖關遊戲？</div>
+
+          <div class="svy-yn"><label><input type="radio" name="playedGame" value="yes" ${playedGame ? 'checked' : ''}> 有玩過</label>
+
+          <label><input type="radio" name="playedGame" value="no"> 沒有玩過（跳過本部分）</label></div></div>` : ''}
+
+        <div class="svy-items">${sec.items.map(it => likertRow(it.id, it.t, ++no)).join('')}</div>
+
+      </div>`).join('');
+
+    const susHtml = SURVEY.sus.map((t, i) => likertRow('SUS' + (i + 1), t, i + 1)).join('');
+
+    const selfItems = SURVEY.self[user.role] || SURVEY.self.new_employee;
+
+    const selfHtml = selfItems.map((it, i) => likertRow(it.id, it.t, i + 1)).join('');
+
+    main.innerHTML = `
+
+      <div class="svy-wrap">
+
+        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
+
+        <div class="svy-head">
+
+          <div class="svy-head-icon">📝</div>
+
+          <h1>學習滿意度問卷</h1>
+
+          <p>感謝您完成課程！請花約 5～8 分鐘填寫，您的回饋將用於改進課程與畢業專題研究，結果以匿名、整體統計方式呈現。</p>
+
+          <div class="svy-progress"><div class="svy-progress-bar"><div id="svy-bar"></div></div><span id="svy-count"></span></div>
+
+        </div>
+
+        <div class="svy-part"><div class="svy-part-title">第一部分　課程滿意度</div><div class="svy-part-desc">請依您的感受，選擇最符合的程度</div>${secHtml}</div>
+
+        <div class="svy-part"><div class="svy-part-title">第二部分　學習平台使用感受</div><div class="svy-part-desc">以下是關於整個學習平台（課程網站與 3D 遊戲）的使用感受，請憑第一印象作答</div><div class="svy-sec"><div class="svy-items">${susHtml}</div></div></div>
+
+        <div class="svy-part"><div class="svy-part-title">第三部分　學習成效自評</div><div class="svy-part-desc">完成課程後，您認為自己的程度如何？</div><div class="svy-sec"><div class="svy-items">${selfHtml}</div></div></div>
+
+        <div class="svy-part"><div class="svy-part-title">第四部分　意見回饋（選填）</div>
+
+          <div class="svy-sec">${SURVEY.open.map(o => `<label class="svy-open"><span>${o.t}</span><textarea id="${o.id}" rows="3" maxlength="500" placeholder="請輸入…"></textarea></label>`).join('')}</div></div>
+
+        <div class="svy-err" id="svy-err"></div>
+
+        <div class="svy-submit"><button class="btn btn-primary" id="svy-submit">送出問卷</button></div>
+
+      </div>`;
+
+    const gameSec = main.querySelector('.svy-game .svy-items');
+
+    function required() {
+
+      const ids = [];
+
+      SURVEY.sections.forEach(sec => { if (sec.game && main.querySelector('input[name=playedGame]:checked')?.value !== 'yes') return; sec.items.forEach(it => ids.push(it.id)); });
+
+      SURVEY.sus.forEach((_, i) => ids.push('SUS' + (i + 1)));
+
+      selfItems.forEach(it => ids.push(it.id));
+
+      return ids;
+
+    }
+
+    function refresh() {
+
+      const show = main.querySelector('input[name=playedGame]:checked')?.value === 'yes';
+
+      gameSec.style.display = show ? '' : 'none';
+
+      const req = required(), n = req.filter(id => main.querySelector(`input[name="${id}"]:checked`)).length;
+
+      document.getElementById('svy-bar').style.width = (n * 100 / req.length) + '%';
+
+      document.getElementById('svy-count').textContent = `已完成 ${n} / ${req.length} 題`;
+
+    }
+
+    main.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', () => { r.closest('.svy-q')?.classList.remove('svy-miss'); refresh(); }));
+
+    if (!main.querySelector('input[name=playedGame]:checked')) gameSec.style.display = 'none';
+
+    refresh();
+
+    document.getElementById('svy-submit').addEventListener('click', () => {
+
+      const req = required();
+
+      const missing = req.filter(id => !main.querySelector(`input[name="${id}"]:checked`));
+
+      main.querySelectorAll('.svy-miss').forEach(e => e.classList.remove('svy-miss'));
+
+      if (!main.querySelector('input[name=playedGame]:checked')) missing.unshift('playedGame');
+
+      if (missing.length) {
+
+        missing.forEach(id => { const q = id === 'playedGame' ? main.querySelector('.svy-gate') : main.querySelector(`.svy-q[data-q="${id}"]`); if (q) q.classList.add('svy-miss'); });
+
+        document.getElementById('svy-err').textContent = `還有 ${missing.length} 題尚未作答（已用紅框標示）`;
+
+        const first = main.querySelector('.svy-miss'); if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        return;
+
+      }
+
+      const val = id => { const r = main.querySelector(`input[name="${id}"]:checked`); return r ? parseInt(r.value) : null; };
+
+      const answers = {};
+
+      req.forEach(id => { if (!id.startsWith('SUS')) answers[id] = val(id); });
+
+      const sus = SURVEY.sus.map((_, i) => val('SUS' + (i + 1)));
+
+      const open = {}; SURVEY.open.forEach(o => { open[o.id] = document.getElementById(o.id).value.trim(); });
+
+      Data.saveSurvey(user.empId, {
+
+        role: user.role, playedGame: main.querySelector('input[name=playedGame]:checked').value === 'yes',
+
+        answers, sus, susScore: calcSUS(sus), open, finalScore: finalProg.quizScore, submittedAt: new Date().toISOString()
+
+      });
+
+      Data.addLog(user.empId, 'survey_submitted', '填寫滿意度問卷');
+
+      main.innerHTML = `<div class="svy-wrap"><div class="svy-thanks"><div class="svy-thanks-icon">🎉</div><h2>感謝您的填寫！</h2>
+
+        <p>您的回饋對我們非常重要，將用於改進課程內容。</p><a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a></div></div>`;
+
+      window.scrollTo(0, 0); document.body.scrollTop = 0;
+
+    });
+
+  }
+
+
+
+  // =====================================================================
+
+  // ===== 求助資源 =====
+
+  // 公司內部窗口請依實際情況修改 RESOURCES.internal
+
+  // =====================================================================
+
+  const RESOURCES = {
+
+    internal: [
+
+      { icon: '🧑‍💼', title: '直屬主管', desc: '工作上遇到任何問題，可以先找直屬主管討論', note: '若主管本身就是事件當事人，請改找人資或申訴窗口' },
+
+      { icon: '🏢', title: '人力資源部', desc: '職場霸凌、性騷擾申訴，以及勞動權益相關問題', note: '請依公司公告的申訴管道提出' },
+
+      { icon: '🛡️', title: '個資窗口／資安窗口', desc: '個資外洩、可疑郵件、電腦中毒等資安事件', note: '發現異常請立即通報，不要自行處理或隱瞞' },
+
+      { icon: '🦺', title: '職業安全衛生人員', desc: '工作環境的安全隱憂、職業災害通報', note: '' },
+
+    ],
+
+    situations: [
+
+      { icon: '🔒', title: '發現個資可能外洩', tag: '個資', steps: ['立即通報主管與個資窗口', '保留相關紀錄，不要自行刪除', '配合公司查明，並依規定通知當事人'] },
+
+      { icon: '⚠️', title: '發生職災或看到危險', tag: '職安', steps: ['先確保自身與同事安全', '通報主管與職安人員', '對處理結果有疑慮，可撥 1955 諮詢'] },
+
+      { icon: '🎣', title: '收到可疑郵件、訊息', tag: '資安', steps: ['不點連結、不開附件、不回覆', '向 IT 或資安窗口通報', '已經被騙或匯款，立即撥 165'] },
+
+      { icon: '😣', title: '遭受職場霸凌', tag: '霸凌', steps: ['記錄日期、經過、證據與目擊者', '向公司申訴管道提出申訴', '公司未妥善處理，可撥 1955 尋求協助'] },
+
+      { icon: '🚫', title: '遭受性騷擾', tag: '性騷擾', steps: ['保留對話、訊息等證據', '向公司性騷擾申訴管道提出', '可向地方政府勞工主管機關申訴，或撥 113'] },
+
+      { icon: '💙', title: '心情低落、壓力很大', tag: '身心', steps: ['找信任的人聊聊', '使用公司的員工協助方案（如有）', '24 小時都可以撥 1925 安心專線'] },
+
+    ],
+
+    hotlines: [
+
+      { num: '1955', title: '勞工諮詢申訴專線', desc: '勞動部｜勞動權益、職場霸凌、性騷擾等勞動問題，24 小時、免付費' },
+
+      { num: '113', title: '保護專線', desc: '衛生福利部｜性騷擾、性侵害、家庭暴力等，24 小時' },
+
+      { num: '165', title: '反詐騙諮詢專線', desc: '內政部警政署｜詐騙、可疑訊息查證' },
+
+      { num: '1925', title: '安心專線', desc: '衛生福利部｜心理諮詢，24 小時、免付費' },
+
+    ],
+
+    laws: [
+
+      { title: '個人資料保護法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=I0050021', unit: '個資管理' },
+
+      { title: '職業安全衛生法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=N0060001', unit: '職業安全衛生、職場霸凌' },
+
+      { title: '性別平等工作法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=N0030014', unit: '職場性騷擾防治' },
+
+      { title: '勞動基準法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=N0030001', unit: '勞動權益' },
+
+      { title: '資通安全管理法', url: 'https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=A0030297', unit: '資訊安全' },
+
+    ],
+
+  };
+
+  function renderResources() {
+
+    const user = Data.getCurrentUser();
+
+    try { Data.addLog(user.empId, 'resources_view', '查看求助資源'); } catch (e) {}
+
+    const main = document.getElementById('main-content');
+
+    main.innerHTML = `
+
+      <div class="res-wrap">
+
+        <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
+
+        <div class="page-header" style="text-align:center; margin: 10px 0 22px;">
+
+          <h1 class="page-title" style="font-size:32px; letter-spacing:6px;">求助資源</h1>
+
+          <div style="width:44px; height:3px; background:var(--primary); margin:14px auto;"></div>
+
+          <p style="color:var(--text-light);">遇到職場問題時，你不是一個人。以下是可以尋求協助的管道</p>
+
+        </div>
+
+        <div class="res-safe">🤝 <b>申訴與通報都受到保護：</b>公司應對申訴內容保密，也不可以因為你提出申訴或協助調查，而對你做出不利的處分。</div>
+
+
+
+        <h2 class="sum-h">🧭 遇到狀況，這樣做</h2>
+
+        <div class="res-situations">
+
+          ${RESOURCES.situations.map(s => `
+
+            <div class="res-sit"><div class="res-sit-head"><span class="res-sit-icon">${s.icon}</span><div><div class="res-sit-tag">${s.tag}</div><div class="res-sit-title">${s.title}</div></div></div>
+
+              <ol>${s.steps.map(t => `<li>${t}</li>`).join('')}</ol></div>`).join('')}
+
+        </div>
+
+
+
+        <h2 class="sum-h">🏢 公司內部窗口</h2>
+
+        <div class="res-internal">
+
+          ${RESOURCES.internal.map(r => `<div class="res-int"><div class="res-int-icon">${r.icon}</div><div><div class="res-int-title">${r.title}</div><div class="res-int-desc">${r.desc}</div>${r.note ? `<div class="res-int-note">${r.note}</div>` : ''}</div></div>`).join('')}
+
+        </div>
+
+
+
+        <h2 class="sum-h">📞 外部諮詢專線</h2>
+
+        <div class="res-hotlines">
+
+          ${RESOURCES.hotlines.map(h => `<a class="res-hot" href="tel:${h.num}"><div class="res-hot-num">${h.num}</div><div><div class="res-hot-title">${h.title}</div><div class="res-hot-desc">${h.desc}</div></div></a>`).join('')}
+
+        </div>
+
+        <p class="res-hint">📱 用手機瀏覽時，點專線號碼就能直接撥打。</p>
+
+
+
+        <h2 class="sum-h">📜 相關法規（全國法規資料庫）</h2>
+
+        <div class="res-laws">
+
+          ${RESOURCES.laws.map(l => `<a class="res-law" href="${l.url}" target="_blank" rel="noopener"><span>📖 ${l.title}</span><small>${l.unit}</small><b>↗</b></a>`).join('')}
+
+        </div>
+
+        <p class="res-hint">本頁資訊僅供參考，實際權益與程序請以法規及主管機關公告為準。</p>
+
+      </div>`;
+
+  }
+
+
+
   // ===== 3D 闖關遊戲頁 =====
   const GAME_URLS = {
     new_employee: 'https://juliachiao.github.io/3d-space/employee.html',
@@ -1862,13 +2342,18 @@ const App = (function () {
              <div style="background:#1a1a1a; border-radius:0 0 12px 12px; padding:10px 14px; display:flex; align-items:center; gap:14px;">
                <button class="ytc-play" type="button" style="background:none; border:none; color:#fff; font-size:20px; cursor:pointer; width:28px;">▶</button>
                <button class="ytc-mute" type="button" style="background:none; border:none; color:#fff; font-size:16px; cursor:pointer; width:24px;">🔊</button>
+               <button class="ytc-back" type="button" title="倒退 10 秒" style="background:none; border:none; color:#fff; font-size:13px; cursor:pointer; white-space:nowrap;">⏪ 10秒</button>
                <span class="ytc-time" style="color:#ccc; font-size:13px; min-width:100px;">0:00 / 0:00</span>
-               <div style="flex:1; height:5px; background:#444; border-radius:3px; overflow:hidden; pointer-events:none;">
-                 <div class="ytc-bar-fill" style="width:0%; height:100%; background:#e04b4b;"></div>
+               <div class="ytc-bar" title="可拖曳倒回已看過的片段" style="flex:1; position:relative; height:16px; display:flex; align-items:center; cursor:pointer; touch-action:none;">
+                 <div style="position:absolute; left:0; right:0; height:5px; background:#444; border-radius:3px; overflow:hidden;">
+                   <div class="ytc-bar-max" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:#8a8a8a;"></div>
+                   <div class="ytc-bar-fill" style="position:absolute; left:0; top:0; bottom:0; width:0%; background:#e04b4b;"></div>
+                 </div>
+                 <div class="ytc-knob" style="position:absolute; left:0%; width:13px; height:13px; margin-left:-6px; border-radius:50%; background:#fff; box-shadow:0 0 0 2px #e04b4b;"></div>
                </div>
                <button class="ytc-fullscreen" type="button" title="全螢幕" style="background:none; border:none; color:#fff; font-size:17px; cursor:pointer; width:26px;">⛶</button>
              </div>
-             <div style="font-size:11px; color:var(--text-light); margin-top:4px;">🔒 為確保觀看紀錄真實，本影片進度條無法拖動快轉，請完整觀看。</div>
+             <div style="font-size:11px; color:var(--text-light); margin-top:4px;">🔒 可拖曳進度條或按「⏪ 10秒」倒回重看已看過的片段；尚未看過的部分無法快轉（灰色＝已看過的範圍）。</div>
            </div>`
         : `<video id="course-video" controls preload="metadata"
              style="width:100%; max-height:480px; border-radius:12px; background:#000;"
@@ -2024,7 +2509,7 @@ const App = (function () {
       ${questionHTML}
       <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:20px;">
         <button class="btn btn-secondary" id="retake-quiz">🔄 重新作答</button>
-        ${passed ? `<button class="btn btn-primary" onclick="App.go('cover',courseId,role)">回課程封面 →</button>` : ''}
+        ${passed ? `<button class="btn btn-primary" onclick="App.go('cover','${courseId}','${role}')">回課程封面 →</button>` : ''}
       </div>
     `;
 
@@ -2050,7 +2535,8 @@ const App = (function () {
     let lastTime = prog.videoLastPosition || 0;
     // 已看過的最遠位置,至少要有「累積觀看秒數」跟「上次播放位置」兩者中較大的一個,
     // 避免使用者重新整理頁面後,續播機制反而被「防跳關」鎖住播不回去
-    const initialMaxWatched = Math.max(prog.videoWatchedSeconds || 0, lastTime);
+    const segMaxEnd = (prog.videoSegments || []).reduce((m, sg) => Math.max(m, sg[1] || 0), 0);
+    const initialMaxWatched = Math.max(prog.videoMaxPosition || 0, segMaxEnd, prog.videoWatchedSeconds || 0, lastTime);
 
     const video = (el.tagName === 'DIV' && el.dataset.ytId)
       ? createYouTubeController('course-video', el.dataset.ytId, initialMaxWatched)
@@ -2113,14 +2599,16 @@ const App = (function () {
       }
     });
 
-    // 使用者跳轉
+    // 使用者跳轉（倒回重看）：先把跳轉前看完的那段記下來
+    video.addEventListener('seeking', () => { flushSegment(); });
     video.addEventListener('seeked', () => {
       const newTime = video.currentTime;
       if (segStart != null && Math.abs(newTime - segStart) > 2) {
-        Data.addLog(empId, 'video_seek', `⏩ 跳轉至 ${formatSec(newTime)}`);
-        segStart = newTime;
-        lastFlush = newTime;
+        Data.addLog(empId, 'video_seek', `${newTime < segStart ? '⏪ 倒回' : '⏩ 跳轉'}至 ${formatSec(newTime)}`);
       }
+      if (segStart != null) { segStart = newTime; lastFlush = newTime; }
+      // 記下目前看到的位置，下次進來從這裡續播
+      Data.setProgress(empId, courseId, { videoLastPosition: Math.floor(newTime) });
     });
 
     // 影片結束
