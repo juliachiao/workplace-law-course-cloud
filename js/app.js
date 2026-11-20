@@ -35,6 +35,7 @@ const App = (function () {
     let lastPollTime = 0;
     let maxWatchedTime = initialMaxWatched || 0;
     let isPlaying = false;
+    let rate = 1;   // 播放速度（1／1.25／1.5）
     // 影片還沒按過播放前，不能呼叫 seekTo（YouTube 的 seekTo 會讓影片自動開始播放）
     // 所以先把續播位置記下來，等學員按下播放鍵時再跳過去
     let hasStarted = false;
@@ -77,7 +78,8 @@ const App = (function () {
       return safeTime >= t - 0.5; // 回報是否為「完整跳轉」(沒有被裁切)
     };
     target.isPlayingNow = () => isPlaying;
-
+    target.setRate = (r) => { rate = r; try { if (player && player.setPlaybackRate) player.setPlaybackRate(r); } catch (_) {} };
+    target.getRate = () => rate;
     loadYouTubeAPI().then(() => {
       player = new YT.Player(containerId, {
         width: '100%',
@@ -86,6 +88,7 @@ const App = (function () {
         videoId,
         events: {
           onReady: () => {
+            try { if (rate !== 1) player.setPlaybackRate(rate); } catch (_) {}
             target.dispatchEvent(new Event('loadedmetadata'));
           },
           onStateChange: (e) => {
@@ -98,14 +101,15 @@ const App = (function () {
                 pollTimer = setInterval(() => {
                   const now = player.getCurrentTime();
                   // 防快轉最後一道防線：只有跳到「還沒看過的位置」才彈回；倒回或在已看範圍內移動都允許
-                  if (now > maxWatchedTime + 1.8 && now - lastPollTime > 1.8) {
+                  const tol = 1.8 * rate + 0.4;   // 加速播放時每秒前進較多，容許值跟著放寬
+                  if (now > maxWatchedTime + tol && now - lastPollTime > tol) {
                     player.seekTo(maxWatchedTime, true);
                     target.dispatchEvent(new Event('seeked'));
                     lastPollTime = maxWatchedTime;
                     target.dispatchEvent(new Event('timeupdate'));
                     return;
                   }
-                  const continuous = now >= lastPollTime && now - lastPollTime <= 1.8;
+                  const continuous = now >= lastPollTime && now - lastPollTime <= tol;
                   lastPollTime = now;
                   if (continuous && now > maxWatchedTime) maxWatchedTime = now;
                   target.dispatchEvent(new Event('timeupdate'));
@@ -143,6 +147,28 @@ const App = (function () {
     btnPlay.addEventListener('click', () => {
       if (video.isPlayingNow()) video.pause(); else video.play();
     });
+    // 影片中央的大播放鍵（之前點影片畫面沒有反應）
+    const bigPlay = wrap.querySelector('.ytc-bigplay');
+    if (bigPlay) {
+      bigPlay.addEventListener('click', () => { if (video.isPlayingNow()) video.pause(); else video.play(); });
+      video.addEventListener('play', () => bigPlay.classList.add('is-playing'));
+      video.addEventListener('pause', () => bigPlay.classList.remove('is-playing'));
+      video.addEventListener('ended', () => bigPlay.classList.remove('is-playing'));
+    }
+    // 播放速度：1x → 1.25x → 1.5x（記住上次的選擇）
+    const btnRate = wrap.querySelector('.ytc-rate');
+    if (btnRate && video.setRate) {
+      const RATES = [1, 1.25, 1.5];
+      let ri = 0;
+      try { ri = Math.max(0, RATES.indexOf(parseFloat(localStorage.getItem('wlc_play_rate') || '1'))); } catch (_) {}
+      const applyRate = () => { video.setRate(RATES[ri]); btnRate.textContent = RATES[ri] + 'x'; btnRate.title = '播放速度：' + RATES[ri] + ' 倍（點擊切換）'; };
+      applyRate();
+      btnRate.addEventListener('click', () => {
+        ri = (ri + 1) % RATES.length; applyRate();
+        try { localStorage.setItem('wlc_play_rate', String(RATES[ri])); } catch (_) {}
+        toast('播放速度：' + RATES[ri] + ' 倍', 'success');
+      });
+    }
     btnMute.addEventListener('click', () => {
       muted = !muted;
       btnMute.textContent = muted ? '🔇' : '🔊';
@@ -652,8 +678,9 @@ const App = (function () {
       let statusBadge = '';
       if (p.completed) {
         statusBadge = `<span class="menu-card-badge badge-done">✓ 已完成</span>`;
-      } else if (p.videoWatched || p.videoWatchedSeconds > 0) {
-        statusBadge = `<span class="menu-card-badge badge-prog">學習中</span>`;
+      } else if (p.videoWatched || p.videoWatchedSeconds > 0 || p.quizScore != null) {
+        const need = [!p.videoWatched ? '看完影片' : null, !(p.quizScore != null && p.quizScore >= 80) ? '測驗 80 分' : null].filter(Boolean).join('、');
+        statusBadge = `<span class="menu-card-badge badge-prog">學習中・還差：${need}</span>`;
       }
       return `
         <div class="menu-card" data-course-id="${c.id}" style="--bc:${col.c}; --bbg:${col.bg}; --i:${i}">
@@ -1740,8 +1767,9 @@ const App = (function () {
     let statusHtml = '';
     if (p.completed) {
       statusHtml = `<div class="cv-status cv-status-done">✅ 已完成｜測驗 ${p.quizScore} 分</div>`;
-    } else if (p.videoWatched || p.videoWatchedSeconds > 0) {
-      statusHtml = `<div class="cv-status cv-status-prog">▶ 學習中｜影片進度 ${videoPct}%</div>`;
+    } else if (p.videoWatched || p.videoWatchedSeconds > 0 || p.quizScore != null) {
+      const need = [!p.videoWatched ? `看完影片（目前 ${videoPct}%，需 90%）` : null, !(p.quizScore != null && p.quizScore >= 80) ? '單元測驗 80 分' : null].filter(Boolean).join('、');
+      statusHtml = `<div class="cv-status cv-status-prog">▶ 學習中｜還差：${need}</div>`;
     }
 
     const TAGLINES = {
@@ -2337,12 +2365,22 @@ const App = (function () {
              #ytc-wrap:fullscreen #course-video,
              #ytc-wrap:-webkit-full-screen #course-video { flex:1 1 auto; height:auto; aspect-ratio:unset; border-radius:0; }
            </style>
+           <style>
+             .ytc-bigplay { position:absolute; left:0; top:0; width:100%; aspect-ratio:16/9; border:none; background:rgba(0,0,0,0.25); cursor:pointer; display:flex; align-items:center; justify-content:center; border-radius:12px 12px 0 0; transition:background .2s; }
+             .ytc-bigplay span { width:84px; height:84px; border-radius:50%; background:rgba(224,75,75,0.92); color:#fff; font-size:36px; display:flex; align-items:center; justify-content:center; padding-left:6px; box-shadow:0 6px 24px rgba(0,0,0,0.4); transition:transform .15s, opacity .2s; }
+             .ytc-bigplay:hover span { transform:scale(1.08); }
+             .ytc-bigplay.is-playing { background:transparent; }
+             .ytc-bigplay.is-playing span { opacity:0; }
+             #ytc-wrap:fullscreen .ytc-bigplay, #ytc-wrap:-webkit-full-screen .ytc-bigplay { aspect-ratio:auto; height:calc(100% - 56px); }
+           </style>
            <div id="ytc-wrap" style="position:relative;">
              <div id="course-video" data-yt-id="${ytId}" style="width:100%; aspect-ratio:16/9; border-radius:12px 12px 0 0; background:#000; overflow:hidden; pointer-events:none;"></div>
+             <button class="ytc-bigplay" type="button" aria-label="播放／暫停"><span>▶</span></button>
              <div style="background:#1a1a1a; border-radius:0 0 12px 12px; padding:10px 14px; display:flex; align-items:center; gap:14px;">
                <button class="ytc-play" type="button" style="background:none; border:none; color:#fff; font-size:20px; cursor:pointer; width:28px;">▶</button>
                <button class="ytc-mute" type="button" style="background:none; border:none; color:#fff; font-size:16px; cursor:pointer; width:24px;">🔊</button>
                <button class="ytc-back" type="button" title="倒退 10 秒" style="background:none; border:none; color:#fff; font-size:13px; cursor:pointer; white-space:nowrap;">⏪ 10秒</button>
+               <button class="ytc-rate" type="button" title="播放速度" style="background:#333; border:1px solid #666; color:#fff; font-size:12px; cursor:pointer; border-radius:12px; padding:2px 9px; white-space:nowrap;">1x</button>
                <span class="ytc-time" style="color:#ccc; font-size:13px; min-width:100px;">0:00 / 0:00</span>
                <div class="ytc-bar" title="可拖曳倒回已看過的片段" style="flex:1; position:relative; height:16px; display:flex; align-items:center; cursor:pointer; touch-action:none;">
                  <div style="position:absolute; left:0; right:0; height:5px; background:#444; border-radius:3px; overflow:hidden;">
@@ -2353,7 +2391,7 @@ const App = (function () {
                </div>
                <button class="ytc-fullscreen" type="button" title="全螢幕" style="background:none; border:none; color:#fff; font-size:17px; cursor:pointer; width:26px;">⛶</button>
              </div>
-             <div style="font-size:11px; color:var(--text-light); margin-top:4px;">🔒 可拖曳進度條或按「⏪ 10秒」倒回重看已看過的片段；尚未看過的部分無法快轉（灰色＝已看過的範圍）。</div>
+             <div style="font-size:11px; color:var(--text-light); margin-top:4px;">🔒 可拖曳進度條或按「⏪ 10秒」倒回重看已看過的片段；尚未看過的部分無法快轉（灰色＝已看過的範圍）。覺得語速慢可以按「1x」切換成 1.25 或 1.5 倍速。</div>
            </div>`
         : `<video id="course-video" controls preload="metadata"
              style="width:100%; max-height:480px; border-radius:12px; background:#000;"
@@ -2395,19 +2433,14 @@ const App = (function () {
       <a class="btn-back-menu" onclick="App.go('cover','${courseId}','${role}')" style="margin-bottom:20px;">← 回課程封面</a>
       <h1 class="page-title" style="font-size:32px;">${course.icon} ${course.title}</h1>
       <p class="page-subtitle">${course.desc}</p>
-
+      <div id="done-cond"></div>
       <div class="course-content">
         <h3 style="margin-bottom:16px; letter-spacing:2px;">1. 觀看影片${videoCfg.title ? ` — ${videoCfg.title}` : ''}</h3>
         ${videoBlock}
 
         <div class="quiz-section" style="margin-top:32px;">
-          <h3 style="margin-bottom:16px; letter-spacing:2px;">2. 單元測驗</h3>
-          ${renderQuiz(courseId)}
-          <div style="text-align:right; margin-top:16px;">
-            <button class="btn btn-primary" id="submit-quiz">送出測驗</button>
-          </div>
+          ${quizSectionInner(courseId, !hasVideo || p.videoWatched)}
         </div>
-
         ${p.completed ? `
           <div style="margin-top:32px; padding:24px; background:#d4ecd4; border-radius:12px; text-align:center;">
             <strong style="color:#4a8a4a;">🎉 您已完成此課程!</strong>
@@ -2436,6 +2469,47 @@ const App = (function () {
     bindSubmitQuiz(courseId, role);
     renderWrongAnswerSection(user.empId, courseId);
     startStudyTimer(user.empId, courseId);
+    renderDoneCond(user.empId, courseId);
+    currentCourseCtx = { courseId, role };
+  }
+  let currentCourseCtx = null;
+  // 測驗區：影片看完（達 90%）才顯示題目，避免看影片時分心
+  function quizSectionInner(courseId, unlocked) {
+    if (!unlocked) {
+      return `<h3 style="margin-bottom:16px; letter-spacing:2px;">2. 單元測驗</h3>
+        <div class="quiz-locked" style="padding:28px; border-radius:12px; background:rgba(170,184,208,0.12); text-align:center; border:2px dashed rgba(170,184,208,0.5);">
+          <div style="font-size:36px;">🔒</div>
+          <div style="font-weight:700; margin-top:8px;">看完影片（觀看達 90%）後，測驗題目就會出現在這裡</div>
+          <div style="color:var(--text-light); font-size:13px; margin-top:6px;">先專心看影片，看完不用重新整理，題目會自動顯示。</div>
+        </div>`;
+    }
+    return `<h3 style="margin-bottom:16px; letter-spacing:2px;">2. 單元測驗</h3>
+      ${renderQuiz(courseId)}
+      <div style="text-align:right; margin-top:16px;">
+        <button class="btn btn-primary" id="submit-quiz">送出測驗</button>
+      </div>`;
+  }
+  function unlockQuizSection(courseId, role) {
+    const sec = document.querySelector('.quiz-section');
+    if (!sec || !sec.querySelector('.quiz-locked')) return;
+    sec.innerHTML = quizSectionInner(courseId, true);
+    bindSubmitQuiz(courseId, role);
+    toast('影片看完了！可以開始作答單元測驗', 'success');
+  }
+  // 完課條件：直接列出「看完影片」「測驗 80 分」各自完成了沒
+  function renderDoneCond(empId, courseId) {
+    const box = document.getElementById('done-cond');
+    if (!box) return;
+    const p = Data.getProgress(empId, courseId);
+    const pct = p.videoDuration ? Math.min(100, Math.round((p.videoWatchedSeconds || 0) * 100 / p.videoDuration)) : (p.videoWatched ? 100 : 0);
+    const v = !!p.videoWatched, q = p.quizScore != null && p.quizScore >= 80;
+    const item = (ok, txt, sub) => `<div style="display:flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px; background:${ok ? '#d4ecd4' : 'rgba(170,184,208,0.15)'}; color:${ok ? '#2f6f3f' : 'inherit'}; font-size:14px;">
+      <b>${ok ? '✓' : '○'}</b><span>${txt}</span><span style="opacity:.75; font-size:12px;">${sub}</span></div>`;
+    box.innerHTML = `<div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:4px 0 20px; padding:12px 16px; border-radius:14px; background:var(--card-bg, #fff); box-shadow:0 2px 10px rgba(0,0,0,0.05);">
+      <span style="font-weight:700; margin-right:4px;">${p.completed ? '🎉 已完課' : '完課條件'}</span>
+      ${item(v, '看完影片', v ? '已達 90%' : `目前 ${pct}%，需達 90%`)}
+      ${item(q, '單元測驗 80 分以上', p.quizScore != null ? `最高／最近 ${p.quizScore} 分` : '尚未作答')}
+    </div>`;
   }
 
   function bindSubmitQuiz(courseId, role) {
@@ -2447,6 +2521,8 @@ const App = (function () {
         const picked = document.querySelector(`input[name="q${qi}"]:checked`);
         return picked ? parseInt(picked.value) : -1;
       });
+      { const cu = Data.getCurrentUser(), pv = Data.getProgress(cu.empId, courseId), vc = Data.getVideoConfig(courseId);
+        if (vc && vc.url && !pv.videoWatched) { toast('請先看完影片（觀看達 90%）再作答', 'error'); return; } }
       const unanswered = userAnswers.filter(a => a === -1).length;
       if (unanswered > 0) {
         toast(`還有 ${unanswered} 題未作答`, 'error');
@@ -2464,6 +2540,7 @@ const App = (function () {
       }, []);
       Data.saveWrongAnswers(user.empId, courseId, wrongs);
       checkComplete(user.empId, courseId);
+      renderDoneCond(user.empId, courseId);
       renderQuizResults(courseId, userAnswers, role);
       renderWrongAnswerSection(user.empId, courseId);
       document.querySelector('.quiz-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2622,6 +2699,7 @@ const App = (function () {
         Data.addLog(empId, 'video_watched', `🎬 達成觀看門檻 (${Math.round(ratio*100)}%)`);
         toast(`觀看進度達 ${Math.round(ratio*100)}%,影片完成!`, 'success');
         checkComplete(empId, courseId);
+        if (currentCourseCtx && currentCourseCtx.courseId === courseId) unlockQuizSection(courseId, currentCourseCtx.role);
       } else if (ratio < REQUIRED_RATIO) {
         toast(`觀看進度 ${Math.round(ratio*100)}%,需達 ${REQUIRED_RATIO*100}% 才算完成`, 'error');
       }
@@ -2716,6 +2794,7 @@ const App = (function () {
     if (txt) {
       txt.textContent = `${formatSec(watched)} / ${formatSec(dur)} (${(ratio*100).toFixed(1)}%)${p.videoWatched ? ' ✓ 已達門檻' : ''}`;
     }
+    renderDoneCond(empId, courseId);
   }
 
   function formatSec(s) {
@@ -3189,6 +3268,27 @@ const App = (function () {
     if (u) enterApp();
   }
 
+  // 全站字體大小：A → A+ → A++（右下角按鈕，記住選擇）
+  (function fontSizeControl() {
+    try {
+      const st = document.createElement('style');
+      st.textContent = '#wlc-font{position:fixed;right:18px;bottom:18px;z-index:900;width:52px;height:52px;border-radius:50%;border:none;background:#2f3a66;color:#fff;font:800 17px/1 inherit;font-family:inherit;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)}' +
+        '#wlc-font.on{background:#e0a33c;color:#1b2242}' +
+        'body.wlc-fs1 #main-content{zoom:1.15}body.wlc-fs2 #main-content{zoom:1.3}';
+      document.head.appendChild(st);
+      const b = document.createElement('button'); b.id = 'wlc-font'; b.type = 'button';
+      let fs = 0; try { fs = parseInt(localStorage.getItem('wlc_font') || '0', 10) || 0; } catch (_) {}
+      const NAMES = ['標準', '大', '特大'];
+      const apply = () => {
+        document.body.classList.toggle('wlc-fs1', fs === 1); document.body.classList.toggle('wlc-fs2', fs === 2);
+        b.textContent = ['A', 'A+', 'A++'][fs]; b.classList.toggle('on', fs > 0); b.title = '字體大小：' + NAMES[fs] + '（點擊切換）';
+        b.setAttribute('aria-label', b.title);
+      };
+      b.addEventListener('click', () => { fs = (fs + 1) % 3; try { localStorage.setItem('wlc_font', String(fs)); } catch (_) {} apply(); toast('字體大小：' + NAMES[fs], 'success'); });
+      const add = () => { document.body.appendChild(b); apply(); };
+      if (document.body) add(); else document.addEventListener('DOMContentLoaded', add);
+    } catch (_) {}
+  })();
   return { start, go: renderRoute, downloadDemo, logout };
 })();
 
