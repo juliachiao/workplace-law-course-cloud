@@ -702,14 +702,17 @@ const App = (function () {
       const col = BRANCH_COLORS[i % BRANCH_COLORS.length];
       const p = Data.getProgress(user.empId, c.id);
       let statusBadge = '';
-      if (p.completed) {
+      const lk = getCourseLock(user.empId, user.role, c.id);
+      if (lk.locked) {
+        statusBadge = `<span class="menu-card-badge badge-lock">🔒 完成第 ${i} 單元後開放</span>`;
+      } else if (p.completed) {
         statusBadge = `<span class="menu-card-badge badge-done">✓ 已完成</span>`;
       } else if (p.videoWatched || p.videoWatchedSeconds > 0 || p.quizScore != null) {
         const need = [!p.videoWatched ? '看完影片' : null, !(p.quizScore != null && p.quizScore >= 80) ? '測驗 80 分' : null].filter(Boolean).join('、');
         statusBadge = `<span class="menu-card-badge badge-prog">學習中・還差：${need}</span>`;
       }
       return `
-        <div class="menu-card" data-course-id="${c.id}" style="--bc:${col.c}; --bbg:${col.bg}; --i:${i}">
+        <div class="menu-card ${lk.locked ? 'is-locked menu-card-unit-locked' : ''}" data-course-id="${c.id}" style="--bc:${col.c}; --bbg:${col.bg}; --i:${i}">
           <div class="menu-card-left">
             <div class="menu-card-icon">${c.icon}</div>
           </div>
@@ -721,7 +724,7 @@ const App = (function () {
             </div>
             <div class="menu-card-desc">${c.desc}</div>
           </div>
-          <div class="menu-card-arrow">→</div>
+          <div class="menu-card-arrow">${lk.locked ? '🔒' : '→'}</div>
         </div>
       `;
     }).join('');
@@ -775,7 +778,11 @@ const App = (function () {
     `;
 
     main.querySelectorAll('.menu-card[data-course-id]').forEach(el => {
-      el.addEventListener('click', () => renderRoute('cover', el.dataset.courseId, user.role));
+      el.addEventListener('click', () => {
+        const lk = getCourseLock(user.empId, user.role, el.dataset.courseId);
+        if (lk.locked) return toast(lockedCourseMsg(lk));
+        renderRoute('cover', el.dataset.courseId, user.role);
+      });
     });
 
     const feCard = main.querySelector('.menu-card[data-final-exam]');
@@ -1792,6 +1799,10 @@ const App = (function () {
     const allCourses = [...(Data.COURSES.new_employee || []), ...(Data.COURSES.manager || [])];
     const course = allCourses.find(c => c.id === courseId);
     if (!course) return renderMenu();
+    if (user && role === user.role) {
+      const lk = getCourseLock(user.empId, role, courseId);
+      if (lk.locked) { toast(lockedCourseMsg(lk)); return renderRoute('menu'); }
+    }
 
     const p = Data.getProgress(user.empId, courseId);
     const roleCourses = Data.COURSES[role] || [];
@@ -1868,6 +1879,10 @@ const App = (function () {
     const allCourses = [...(Data.COURSES.new_employee || []), ...(Data.COURSES.manager || [])];
     const course = allCourses.find(c => c.id === courseId);
     if (!course) return renderMenu();
+    if (user && role === user.role) {
+      const lk = getCourseLock(user.empId, role, courseId);
+      if (lk.locked) { toast(lockedCourseMsg(lk)); return renderRoute('menu'); }
+    }
 
     const p = Data.getProgress(user.empId, courseId);
     const intro = COURSE_INTRO[courseId];
@@ -2373,6 +2388,10 @@ const App = (function () {
     const user = Data.getCurrentUser();
     const course = (Data.COURSES[role] || []).find(c => c.id === courseId);
     if (!course) return renderHome();
+    if (user && role === user.role) {
+      const lk = getCourseLock(user.empId, role, courseId);
+      if (lk.locked) { toast(lockedCourseMsg(lk)); return renderRoute('menu'); }
+    }
 
     const isMine = user.role === role;
     const main = document.getElementById('main-content');
@@ -3287,6 +3306,22 @@ const App = (function () {
   }
 
   // 檢查該角色所有單元課程是否都已完成
+  // 單元依序開放：第 1 單元一開始就開；之後要完成前一個單元才開。
+  // 已經開始學過的單元（有看影片或做過測驗）維持開放，避免舊進度被鎖住。
+  function getCourseLock(empId, role, courseId) {
+    const courses = Data.COURSES[role] || [];
+    const idx = courses.findIndex(c => c.id === courseId);
+    if (idx <= 0) return { locked: false };
+    const p = Data.getProgress(empId, courseId);
+    if (p.completed || p.videoWatched || p.videoWatchedSeconds > 0 || p.quizScore != null) return { locked: false };
+    const prev = courses[idx - 1];
+    if (Data.getProgress(empId, prev.id).completed) return { locked: false };
+    return { locked: true, prevIdx: idx, prevTitle: prev.title };
+  }
+  function lockedCourseMsg(lock) {
+    return `🔒 請先完成第 ${lock.prevIdx} 單元「${lock.prevTitle}」，這個單元才會開放`;
+  }
+
   function getFinalExamLockStatus(empId, role) {
     const courses = Data.COURSES[role] || [];
     const incomplete = courses.filter(c => !Data.getProgress(empId, c.id).completed);
