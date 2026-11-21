@@ -3292,3 +3292,13 @@ body::after {
   .menu-extra-grid { grid-template-columns: 1fr; }
   .menu-section-extra { padding: 18px 14px 18px; margin-top: 30px; }
 }
+
+/* ===== 下一步提示（課程選單 hero） ===== */
+.menu-next { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:12px; padding:12px 14px 12px 16px; border-radius:12px; background:#fff8e6; border:1.5px solid #f3c969; }
+.menu-next-txt { font-size:15px; color:#4a3b12; line-height:1.5; }
+.menu-next-txt b { color:#8a5a00; }
+.menu-next-btn { flex-shrink:0; border:0; cursor:pointer; padding:9px 18px; border-radius:999px; background:#e8a317; color:#fff; font-size:15px; font-weight:700; font-family:inherit; box-shadow:0 3px 10px rgba(232,163,23,.3); transition:transform .15s, box-shadow .15s; }
+.menu-next-btn:hover { transform:translateY(-1px); box-shadow:0 5px 14px rgba(232,163,23,.4); }
+.menu-next.is-done { background:#eaf7ee; border-color:#8fd0a3; }
+.menu-next.is-done .menu-next-txt, .menu-next.is-done b { color:#1f5e33; }
+@media (max-width:600px) { .menu-next-btn { width:100%; } }
