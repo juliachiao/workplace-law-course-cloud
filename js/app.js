@@ -649,7 +649,7 @@ const App = (function () {
       </div>
     `;
 
-    // 3D 闖關遊戲（依身分顯示員工篇或主管篇）
+    // Aery 闖關遊戲（依身分顯示員工篇或主管篇；遊戲裡可選聊天模式或 3D 探索模式）
     const gameCard = `
       <div class="menu-card menu-card-game ${isManager ? 'game-mgr' : 'game-emp'}" data-game="1">
         <div class="menu-card-left">
@@ -657,10 +657,10 @@ const App = (function () {
         </div>
         <div class="menu-card-body">
           <div class="menu-card-title-row">
-            <span class="menu-card-title">Aery 3D 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</span>
+            <span class="menu-card-title">Aery 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</span>
             <span class="menu-card-badge">NEW</span>
           </div>
-          <div class="menu-card-desc">走進 3D 辦公室，找線索、玩小遊戲，${isManager ? '3' : '4'} 大關卡全破就能領取結業證書！</div>
+          <div class="menu-card-desc">跟著 Aery 闖過 ${isManager ? '3' : '4'} 個關卡，全破就能領取結業證書！可以選「聊天模式」或「3D 探索模式」。</div>
         </div>
         <div class="menu-card-arrow">→</div>
       </div>
@@ -1615,18 +1615,18 @@ const App = (function () {
     const user = Data.getCurrentUser();
     const isManager = user.role === 'manager';
     const url = isManager ? GAME_URLS.manager : GAME_URLS.new_employee;
-    try { Data.addLog(user.empId, 'game_opened', `開啟 3D 闖關遊戲（${isManager ? '主管篇' : '員工篇'}）`); } catch (e) {}
+    try { Data.addLog(user.empId, 'game_opened', `開啟 Aery 闖關遊戲（${isManager ? '主管篇' : '員工篇'}）`); } catch (e) {}
     document.getElementById('main-content').innerHTML = `
       <div class="game-page">
         <div class="game-page-top">
           <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-          <div class="game-page-title">🎮 Aery 3D 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</div>
+          <div class="game-page-title">🎮 Aery 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</div>
           <a class="btn-game-newtab ${isManager ? 'game-mgr' : 'game-emp'}" href="${url}" target="_blank" rel="noopener">↗ 全螢幕開啟</a>
         </div>
         <div class="game-frame-wrap">
-          <iframe src="${url}" title="Aery 3D 闖關遊戲" allow="fullscreen; autoplay" allowfullscreen></iframe>
+          <iframe src="${url}" title="Aery 闖關遊戲" allow="fullscreen; autoplay" allowfullscreen></iframe>
         </div>
-        <p class="game-page-tip">💡 點一下遊戲畫面就能開始操作，按 Esc 可以叫回滑鼠。用手機玩的話，建議點右上角「全螢幕開啟」。</p>
+        <p class="game-page-tip">💡 不常玩遊戲的話，開始時選「💬 聊天模式」，跟 Aery 聊天、點按鈕就能破關。選 3D 探索模式的話，點一下遊戲畫面就能操作，按 Esc 可以叫回滑鼠。</p>
       </div>
     `;
   }
