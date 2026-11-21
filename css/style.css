@@ -3302,3 +3302,8 @@ body::after {
 .menu-next.is-done { background:#eaf7ee; border-color:#8fd0a3; }
 .menu-next.is-done .menu-next-txt, .menu-next.is-done b { color:#1f5e33; }
 @media (max-width:600px) { .menu-next-btn { width:100%; } }
+
+/* ===== 單元依序開放 ===== */
+.menu-card.menu-card-unit-locked { opacity: 0.6; filter: grayscale(0.5); cursor: not-allowed; }
+.menu-card.menu-card-unit-locked:hover { transform: none; box-shadow: none; }
+.menu-card-badge.badge-lock { background: #eceef3; color: #6b7280; }
