@@ -649,20 +649,32 @@ const App = (function () {
       </div>
     `;
 
-    // Aery 闖關遊戲（依身分顯示員工篇或主管篇；遊戲裡可選聊天模式或 3D 探索模式）
-    const gameCard = `
-      <div class="menu-card menu-card-game ${isManager ? 'game-mgr' : 'game-emp'}" data-game="1">
-        <div class="menu-card-left">
-          <div class="menu-card-icon">🎮</div>
+    // 學習加油站（選修・不影響完課）：闖關遊戲、重點整理、求助資源
+    // 和必修課程分開放、樣式比較淡，避免學員以為遊戲也是必修
+    const extraCards = `
+      <div class="menu-extra-card is-game" data-game="1">
+        <div class="menu-extra-icon">🎮</div>
+        <div class="menu-extra-body">
+          <div class="menu-extra-title">Aery 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</div>
+          <div class="menu-extra-desc">用聊天或 3D 遊戲複習重點，約 10～15 分鐘，可以分次玩</div>
         </div>
-        <div class="menu-card-body">
-          <div class="menu-card-title-row">
-            <span class="menu-card-title">Aery 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</span>
-            <span class="menu-card-badge">NEW</span>
-          </div>
-          <div class="menu-card-desc">跟著 Aery 闖過 ${isManager ? '3' : '4'} 個關卡，全破就能領取結業證書！可以選「聊天模式」或「3D 探索模式」。</div>
+        <div class="menu-extra-arrow">→</div>
+      </div>
+      <div class="menu-extra-card" data-extra="summary">
+        <div class="menu-extra-icon">📌</div>
+        <div class="menu-extra-body">
+          <div class="menu-extra-title">重點整理</div>
+          <div class="menu-extra-desc">各單元的重點，用圖表快速複習</div>
         </div>
-        <div class="menu-card-arrow">→</div>
+        <div class="menu-extra-arrow">→</div>
+      </div>
+      <div class="menu-extra-card" data-extra="resources">
+        <div class="menu-extra-icon">🆘</div>
+        <div class="menu-extra-body">
+          <div class="menu-extra-title">求助資源</div>
+          <div class="menu-extra-desc">遇到問題時，可以找誰、怎麼求助</div>
+        </div>
+        <div class="menu-extra-arrow">→</div>
       </div>
     `;
 
@@ -671,7 +683,6 @@ const App = (function () {
     const avgScore = quizScores.length ? Math.round(quizScores.reduce((a, b) => a + b, 0) / quizScores.length) : null;
     const pathLabel = isManager ? '主管人員學習路徑' : '新進人員學習路徑';
     const pathIcon  = isManager ? '👔' : '👤';
-
     const courseCards = myCourses.map((c, i) => {
       const col = BRANCH_COLORS[i % BRANCH_COLORS.length];
       const p = Data.getProgress(user.empId, c.id);
@@ -689,6 +700,7 @@ const App = (function () {
           </div>
           <div class="menu-card-body">
             <div class="menu-card-title-row">
+              <span class="menu-card-step">${i + 1}</span>
               <span class="menu-card-title">${c.title}</span>
               ${statusBadge}
             </div>
@@ -726,15 +738,23 @@ const App = (function () {
           <div class="menu-prog-overall-bar">
             <div class="menu-prog-overall-fill" style="width:${overall.percent}%"></div>
           </div>
+          <div class="menu-done-rule">✅ 完訓條件：完成 ${myCourses.length} 個單元＋通過總測驗（下方「學習加油站」為選修，不列入完訓）</div>
         </div>
       </div>
 
       <div class="menu-section">
         <div class="menu-section-hdr">
-          <h2 class="menu-section-title">課程選單</h2>
-          <p class="menu-section-sub">點擊課程卡片進入學習</p>
+          <h2 class="menu-section-title">必修課程 <span class="menu-req-tag">必修</span></h2>
+          <p class="menu-section-sub">依序完成 ${myCourses.length} 個單元（看影片＋單元測驗 80 分），再通過總測驗，就完成訓練</p>
         </div>
-        <div class="menu-grid">${courseCards}${finalExamCard}${gameCard}${surveyCard}</div>
+        <div class="menu-grid">${courseCards}${finalExamCard}${surveyCard}</div>
+      </div>
+      <div class="menu-section menu-section-extra">
+        <div class="menu-section-hdr">
+          <h2 class="menu-section-title">學習加油站 <span class="menu-opt-tag">選修・不影響完課</span></h2>
+          <p class="menu-section-sub">想複習重點、或遇到問題時再來看</p>
+        </div>
+        <div class="menu-extra-grid">${extraCards}</div>
       </div>
     `;
 
@@ -750,10 +770,11 @@ const App = (function () {
     const svCard = main.querySelector('.menu-card[data-survey]');
     if (svCard) svCard.addEventListener('click', () => renderRoute('survey'));
 
-    const gmCard = main.querySelector('.menu-card[data-game]');
+    const gmCard = main.querySelector('[data-game]');
     if (gmCard) {
       gmCard.addEventListener('click', () => renderRoute('game'));
     }
+    main.querySelectorAll('[data-extra]').forEach(c => c.addEventListener('click', () => renderRoute(c.dataset.extra)));
   }
 
   // =====================================================================
@@ -1620,7 +1641,7 @@ const App = (function () {
       <div class="game-page">
         <div class="game-page-top">
           <a class="btn-back-menu" onclick="App.go('menu')">← 回課程選單</a>
-          <div class="game-page-title">🎮 Aery 闖關遊戲・${isManager ? '主管篇' : '員工篇'}</div>
+          <div class="game-page-title">🎮 Aery 闖關遊戲・${isManager ? '主管篇' : '員工篇'} <span class="menu-opt-tag">選修・不影響完課</span></div>
           <a class="btn-game-newtab ${isManager ? 'game-mgr' : 'game-emp'}" href="${url}" target="_blank" rel="noopener">↗ 全螢幕開啟</a>
         </div>
         <div class="game-frame-wrap">
@@ -1657,6 +1678,7 @@ const App = (function () {
       <a class="btn-back-menu" onclick="App.go('menu')" style="margin-bottom:20px;">← 回課程選單</a>
       <h1 class="page-title" style="font-size:32px;">🎓 ${courseTitle}總測驗</h1>
       <p class="page-subtitle">共 ${qs.length} 題　｜　80 分通過　｜　預定學習時間 20 分鐘</p>
+      ${Data.getProgress(user.empId, 'final_' + role).completed ? '' : gameNudge('final')}
       <div class="course-content" id="final-exam-section">
         ${renderFinalQuiz(role)}
         <div style="text-align:right; margin-top:16px;">
@@ -2547,6 +2569,18 @@ const App = (function () {
     });
   }
 
+  // 選修的複習遊戲：在「需要複習的時候」才推薦，不放在必修路線上
+  function gameNudge(kind) {
+    const text = kind === 'final'
+      ? '考前想複習一下嗎？可以先玩 <b>Aery 闖關遊戲</b>，跟 Aery 聊天複習重點。'
+      : '想再加深印象嗎？可以用 <b>Aery 闖關遊戲</b>，跟 Aery 聊天複習學過的重點。';
+    return `<div class="game-nudge">
+        <span class="game-nudge-icon">💬</span>
+        <span class="game-nudge-text">${text}<small>選修・不影響完課</small></span>
+        <button type="button" class="game-nudge-btn" onclick="App.go('game')">去複習 →</button>
+      </div>`;
+  }
+
   function renderQuizResults(courseId, userAnswers, role) {
     const qs = getPaper('unit:' + courseId, QUIZ_BANK[courseId] || []);
     const correct = userAnswers.filter((ans, i) => ans === qs[i].a).length;
@@ -2583,6 +2617,7 @@ const App = (function () {
         <div class="score-big">${score} 分</div>
         <div class="score-detail">${correct} / ${qs.length} 題答對　${passed ? '通過 ✓' : '未通過，可重新作答練習'}</div>
       </div>
+      ${gameNudge('quiz')}
       ${questionHTML}
       <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:20px;">
         <button class="btn btn-secondary" id="retake-quiz">🔄 重新作答</button>
