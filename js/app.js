@@ -3270,22 +3270,45 @@ const App = (function () {
 
   // 全站字體大小：A → A+ → A++（右下角按鈕，記住選擇）
   (function fontSizeControl() {
+    // 字體大小按鈕：改成有文字的「🔠 字體」按鈕，第一次進網站會跳出提示，讓大家知道可以放大
     try {
       const st = document.createElement('style');
-      st.textContent = '#wlc-font{position:fixed;right:18px;bottom:18px;z-index:900;width:52px;height:52px;border-radius:50%;border:none;background:#2f3a66;color:#fff;font:800 17px/1 inherit;font-family:inherit;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25)}' +
-        '#wlc-font.on{background:#e0a33c;color:#1b2242}' +
-        'body.wlc-fs1 #main-content{zoom:1.15}body.wlc-fs2 #main-content{zoom:1.3}';
+      st.textContent =
+        '#wlc-font{position:fixed;right:18px;bottom:18px;z-index:900;height:48px;padding:0 18px;border-radius:999px;border:2px solid #fff;background:#2f3a66;color:#fff;' +
+        'font:800 16px/1 inherit;font-family:inherit;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.25);display:flex;align-items:center;gap:6px;white-space:nowrap}' +
+        '#wlc-font:hover{background:#3d4b82}#wlc-font.on{background:#e0a33c;color:#1b2242}' +
+        '#wlc-font-tip{position:fixed;right:18px;bottom:78px;z-index:901;max-width:240px;background:#fff;color:#2e3a4e;border:2px solid #e0a33c;border-radius:14px;' +
+        'padding:12px 14px;font:600 15px/1.6 inherit;font-family:inherit;box-shadow:0 10px 26px rgba(0,0,0,.18);cursor:pointer;animation:wlcTip .3s ease-out}' +
+        '#wlc-font-tip::after{content:"";position:absolute;right:34px;bottom:-9px;width:14px;height:14px;background:#fff;border-right:2px solid #e0a33c;border-bottom:2px solid #e0a33c;transform:rotate(45deg)}' +
+        '#wlc-font-tip small{display:block;color:#6a7a90;font-weight:400;font-size:13px;margin-top:2px}' +
+        '@keyframes wlcTip{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}' +
+        'body.wlc-fs1 #main-content{zoom:1.15}body.wlc-fs2 #main-content{zoom:1.3}' +
+        // 遊戲頁：遊戲裡有自己的字體按鈕，先藏起來，避免蓋住遊戲的按鈕
+        'body:has(.game-frame-wrap) #wlc-font,body:has(.game-frame-wrap) #wlc-font-tip{display:none}' +
+        '@media (max-width:560px){#wlc-font{right:12px;bottom:12px;height:44px;padding:0 14px;font-size:15px}#wlc-font-tip{right:12px;bottom:66px}}';
       document.head.appendChild(st);
       const b = document.createElement('button'); b.id = 'wlc-font'; b.type = 'button';
       let fs = 0; try { fs = parseInt(localStorage.getItem('wlc_font') || '0', 10) || 0; } catch (_) {}
       const NAMES = ['標準', '大', '特大'];
+      let tip = null;
+      const closeTip = () => { if (tip) { tip.remove(); tip = null; } try { localStorage.setItem('wlc_font_tip_seen', '1'); } catch (_) {} };
       const apply = () => {
         document.body.classList.toggle('wlc-fs1', fs === 1); document.body.classList.toggle('wlc-fs2', fs === 2);
-        b.textContent = ['A', 'A+', 'A++'][fs]; b.classList.toggle('on', fs > 0); b.title = '字體大小：' + NAMES[fs] + '（點擊切換）';
+        b.innerHTML = '🔠 字體：' + NAMES[fs]; b.classList.toggle('on', fs > 0);
+        b.title = '目前字體：' + NAMES[fs] + '（點一下切換：標準 → 大 → 特大）';
         b.setAttribute('aria-label', b.title);
       };
-      b.addEventListener('click', () => { fs = (fs + 1) % 3; try { localStorage.setItem('wlc_font', String(fs)); } catch (_) {} apply(); toast('字體大小：' + NAMES[fs], 'success'); });
-      const add = () => { document.body.appendChild(b); apply(); };
+      b.addEventListener('click', () => { closeTip(); fs = (fs + 1) % 3; try { localStorage.setItem('wlc_font', String(fs)); } catch (_) {} apply(); toast('字體大小：' + NAMES[fs], 'success'); });
+      function showTip() {
+        let seen = false; try { seen = localStorage.getItem('wlc_font_tip_seen') === '1'; } catch (_) {}
+        if (seen || tip || !document.body.contains(b)) return;
+        tip = document.createElement('div'); tip.id = 'wlc-font-tip'; tip.setAttribute('role', 'status');
+        tip.innerHTML = '字太小嗎？點下面的按鈕就能放大 👇<small>可以切換：標準 → 大 → 特大</small>';
+        tip.addEventListener('click', closeTip);
+        document.body.appendChild(tip);
+        setTimeout(closeTip, 12000);
+      }
+      const add = () => { document.body.appendChild(b); apply(); setTimeout(showTip, 1500); };
       if (document.body) add(); else document.addEventListener('DOMContentLoaded', add);
     } catch (_) {}
   })();
