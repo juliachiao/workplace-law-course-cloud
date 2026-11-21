@@ -683,6 +683,21 @@ const App = (function () {
     const avgScore = quizScores.length ? Math.round(quizScores.reduce((a, b) => a + b, 0) / quizScores.length) : null;
     const pathLabel = isManager ? '主管人員學習路徑' : '新進人員學習路徑';
     const pathIcon  = isManager ? '👔' : '👤';
+    // 👉 下一步：告訴學員現在該做什麼，一鍵前往
+    let nextStep = null;
+    const nextIdx = myCourses.findIndex(c => !Data.getProgress(user.empId, c.id).completed);
+    if (nextIdx >= 0) {
+      const c = myCourses[nextIdx], p = Data.getProgress(user.empId, c.id);
+      const what = !p.videoWatched ? '看完影片' : '完成單元測驗（80 分過關）';
+      nextStep = { text: `第 ${nextIdx + 1} 單元「${c.title}」：${what}`, btn: p.videoWatched || p.videoWatchedSeconds > 0 ? '繼續學習' : '開始學習', go: () => renderRoute('cover', c.id, user.role) };
+    } else if (!finalProg.completed) {
+      nextStep = { text: '單元都完成了！參加總測驗就能完訓', btn: '前往總測驗', go: () => renderRoute('final_exam', user.role) };
+    } else if (svyOpen && !svyDone) {
+      nextStep = { text: '已完訓！最後花 5 分鐘填寫滿意度問卷', btn: '填寫問卷', go: () => renderRoute('survey') };
+    }
+    const nextStepHtml = nextStep
+      ? `<div class="menu-next"><span class="menu-next-txt">👉 <b>下一步：</b>${nextStep.text}</span><button type="button" class="menu-next-btn" id="menu-next-btn">${nextStep.btn} →</button></div>`
+      : `<div class="menu-next is-done"><span class="menu-next-txt">🎉 <b>已完成全部訓練！</b>想複習的話，可以看下方「學習加油站」。</span></div>`;
     const courseCards = myCourses.map((c, i) => {
       const col = BRANCH_COLORS[i % BRANCH_COLORS.length];
       const p = Data.getProgress(user.empId, c.id);
@@ -739,6 +754,7 @@ const App = (function () {
             <div class="menu-prog-overall-fill" style="width:${overall.percent}%"></div>
           </div>
           <div class="menu-done-rule">✅ 完訓條件：完成 ${myCourses.length} 個單元＋通過總測驗（下方「學習加油站」為選修，不列入完訓）</div>
+          ${nextStepHtml}
         </div>
       </div>
 
@@ -766,6 +782,9 @@ const App = (function () {
     if (feCard) {
       feCard.addEventListener('click', () => renderRoute('final_exam', user.role));
     }
+
+    const nxBtn = main.querySelector('#menu-next-btn');
+    if (nxBtn && nextStep) nxBtn.addEventListener('click', nextStep.go);
 
     const svCard = main.querySelector('.menu-card[data-survey]');
     if (svCard) svCard.addEventListener('click', () => renderRoute('survey'));
