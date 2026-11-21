@@ -3230,3 +3230,65 @@ body::after {
 .res-law span { grid-area: t; flex: none; font-size: 15px; line-height: 1.4; }
 .res-law small { grid-area: u; font-size: 12.5px; line-height: 1.5; }
 .res-law b { grid-area: a; font-size: 18px; }
+
+/* =====================================================================
+   課程選單：必修／選修分區（遊戲是選修，放在下方「學習加油站」）
+   ===================================================================== */
+.menu-card-step {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  background: var(--bc, var(--primary)); color: #fff; font-size: 12px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.menu-req-tag, .menu-opt-tag {
+  display: inline-block; vertical-align: middle; margin-left: 6px; padding: 2px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0;
+}
+.menu-req-tag { background: #2d4a8a; color: #fff; }
+.menu-opt-tag { background: #eef1f6; color: #5f6d82; border: 1px solid #d4dbe6; }
+.menu-done-rule {
+  margin-top: 12px; padding: 8px 14px; border-radius: 10px;
+  background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.88); font-size: 13px; line-height: 1.6;
+}
+.menu-section-extra {
+  margin-top: 40px; margin-bottom: 90px; padding: 22px 22px 24px; border-radius: 20px;
+  background: rgba(255,255,255,0.45); border: 1.5px dashed rgba(74,94,128,0.25);
+}
+.menu-section-extra .menu-section-title { font-size: 16px; }
+.menu-extra-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.menu-extra-card {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  padding: 14px 16px; border-radius: 14px;
+  background: rgba(255,255,255,0.78); border: 1px solid rgba(74,94,128,0.12);
+  transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+}
+.menu-extra-card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.08); transform: translateY(-2px); border-color: rgba(74,94,128,0.3); }
+.menu-extra-icon {
+  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0; background: #f0f3fb;
+  display: flex; align-items: center; justify-content: center; font-size: 22px;
+}
+.menu-extra-card.is-game .menu-extra-icon { background: #ece9ff; }
+.menu-extra-body { flex: 1; min-width: 0; }
+.menu-extra-title { font-size: 14.5px; font-weight: 700; color: var(--text-main); line-height: 1.35; }
+.menu-extra-desc { font-size: 12.5px; color: var(--text-light); line-height: 1.5; margin-top: 2px; }
+.menu-extra-arrow { color: var(--primary-light); opacity: 0.6; flex-shrink: 0; }
+
+/* 適時推薦複習遊戲（單元測驗結果、總測驗前） */
+.game-nudge {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 22px; padding: 12px 16px; border-radius: 14px;
+  background: #f5f3ff; border: 1.5px solid #ddd7ff;
+}
+.game-nudge-icon { font-size: 24px; }
+.game-nudge-text { flex: 1; min-width: 200px; font-size: 14px; line-height: 1.6; color: var(--text-main); }
+.game-nudge-text small { display: block; font-size: 12px; color: var(--text-light); }
+.game-nudge-btn {
+  border: none; border-radius: 999px; padding: 8px 18px; cursor: pointer;
+  background: #6c5ce7; color: #fff; font: inherit; font-size: 14px; font-weight: 700; white-space: nowrap;
+}
+.game-nudge-btn:hover { background: #5143c4; }
+.game-page-title .menu-opt-tag { font-size: 12px; }
+
+@media (max-width: 768px) {
+  .menu-extra-grid { grid-template-columns: 1fr; }
+  .menu-section-extra { padding: 18px 14px 18px; margin-top: 30px; }
+}
