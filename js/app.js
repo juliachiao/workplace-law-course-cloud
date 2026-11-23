@@ -3386,7 +3386,9 @@ const App = (function () {
         'body.wlc-fs1 #main-content{zoom:1.15}body.wlc-fs2 #main-content{zoom:1.3}' +
         // 遊戲頁：遊戲裡有自己的字體按鈕，先藏起來，避免蓋住遊戲的按鈕
         'body:has(.game-frame-wrap) #wlc-font,body:has(.game-frame-wrap) #wlc-font-tip{display:none}' +
-        '@media (max-width:560px){#wlc-font{right:12px;bottom:12px;height:44px;padding:0 14px;font-size:15px}#wlc-font-tip{right:12px;bottom:66px}}';
+        '@media (max-width:560px){#wlc-font{right:12px;bottom:12px;height:44px;padding:0 14px;font-size:15px}#wlc-font-tip{right:12px;bottom:66px;max-width:210px;font-size:14px;padding:10px 12px}}' +
+        // 手機導覽列：四個連結一排、使用者與登出獨立一排，避免「登出」被切掉
+        '@media (max-width:560px){.nav-links{flex-wrap:wrap !important;overflow-x:visible !important;row-gap:6px}.nav-links a{flex:1 1 22% !important}.user-chip{flex:1 1 100% !important;justify-content:center}}';
       document.head.appendChild(st);
       const b = document.createElement('button'); b.id = 'wlc-font'; b.type = 'button';
       let fs = 0; try { fs = parseInt(localStorage.getItem('wlc_font') || '0', 10) || 0; } catch (_) {}
@@ -3404,10 +3406,12 @@ const App = (function () {
         let seen = false; try { seen = localStorage.getItem('wlc_font_tip_seen') === '1'; } catch (_) {}
         if (seen || tip || !document.body.contains(b)) return;
         tip = document.createElement('div'); tip.id = 'wlc-font-tip'; tip.setAttribute('role', 'status');
-        tip.innerHTML = '字太小嗎？點下面的按鈕就能放大 👇<small>可以切換：標準 → 大 → 特大</small>';
+        tip.innerHTML = '字太小嗎？點下面的按鈕就能放大 👇<small>可以切換：標準 → 大 → 特大（點一下關閉）</small>';
         tip.addEventListener('click', closeTip);
         document.body.appendChild(tip);
-        setTimeout(closeTip, 12000);
+        setTimeout(closeTip, 6000);
+        // 一開始捲動或點畫面就收起，避免擋住內容
+        setTimeout(() => { ['scroll', 'touchstart'].forEach(ev => document.addEventListener(ev, closeTip, { once: true, passive: true, capture: true })); }, 800);
       }
       const add = () => { document.body.appendChild(b); apply(); setTimeout(showTip, 1500); };
       if (document.body) add(); else document.addEventListener('DOMContentLoaded', add);
